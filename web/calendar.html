@@ -174,7 +174,8 @@
     <span class="seg-label">月</span>
     <div class="seg" id="segMonth"></div>
     <label class="field"><span>元手</span><input type="number" id="inCapital" value="500000" min="50000" max="100000000" step="50000" class="num"></label>
-    <label class="field"><span>開始日</span><input type="date" id="inStart" class="num"></label>
+    <label class="field"><span>期間</span><input type="date" id="inStart" class="num"></label>
+    <label class="field"><span>〜</span><input type="date" id="inEnd" class="num"></label>
     <button type="button" class="reset" id="btnSave">保存</button>
     <button type="button" class="reset" id="btnReset">保存値に戻す</button>
     <span class="saved-note" id="savedNote"></span>
@@ -288,12 +289,14 @@
       if (!raw) return null;
       const o = JSON.parse(raw);
       if (!o || !isFinite(o.capital)) return null;
-      return { capital: Math.round(o.capital), startDate: o.startDate, savedAt: o.savedAt || "" };
+      return { capital: Math.round(o.capital), startDate: o.startDate, endDate: o.endDate, savedAt: o.savedAt || "" };
     } catch (e) { return null; }
   }
   let saved = loadSaved();
   let capital = saved ? saved.capital : DATA.account;
-  let startDate = (saved && saved.startDate && ALL_DATES.includes(saved.startDate)) ? saved.startDate : ALL_DATES[0];
+  const FIRST_DATE = ALL_DATES[0], LAST_DATE = ALL_DATES[ALL_DATES.length - 1];
+  let startDate = (saved && saved.startDate && saved.startDate >= FIRST_DATE && saved.startDate <= LAST_DATE) ? saved.startDate : FIRST_DATE;
+  let endDate = (saved && saved.endDate && saved.endDate >= startDate && saved.endDate <= LAST_DATE) ? saved.endDate : LAST_DATE;
   const simCache = new Map();
 
   function prevEquity(va, date) {
@@ -307,13 +310,13 @@
   }
 
   function simulate(key) {
-    const cacheKey = key + "|" + capital + "|" + startDate;
+    const cacheKey = key + "|" + capital + "|" + startDate + "|" + endDate;
     if (simCache.has(cacheKey)) return simCache.get(cacheKey);
     const va = DATA.variants[key];
     let eq = capital;
     const days = [], equity = {};
     va.days.forEach(d => {
-      if (d.date < startDate) return;
+      if (d.date < startDate || d.date > endDate) return;
       const f = eq / prevEquity(va, d.date);
       const day = {
         date: d.date, sellDate: d.sellDate, factor: f,
@@ -328,7 +331,7 @@
       equity[d.date] = eq;
       days.push(day);
     });
-    const res = { label: va.label, days: days, equity: equity, scaled: (capital !== DATA.account || startDate !== ALL_DATES[0]) };
+    const res = { label: va.label, days: days, equity: equity, scaled: (capital !== DATA.account || startDate !== FIRST_DATE || endDate !== LAST_DATE) };
     simCache.set(cacheKey, res);
     return res;
   }
@@ -571,7 +574,7 @@
     const to = days.length ? days[days.length - 1].sellDate || days[days.length - 1].date : startDate;
     const jp = s => s ? (Number(s.slice(5, 7)) + "月" + Number(s.slice(8, 10)) + "日") : "—";
     document.getElementById("hdrCond").textContent =
-      from.slice(0, 4) + "年" + jp(from) + "スタート / 元手" + yen(capital) + "円・利益を再投資 / S株・引け買い → 翌寄り売り";
+      from.slice(0, 4) + "年" + jp(from) + "〜" + jp(to) + " / 元手" + yen(capital) + "円・利益を再投資 / S株・引け買い → 翌寄り売り";
     document.getElementById("statPnlLabel").textContent = jp(from) + "〜" + jp(to) + "の収支";
     document.getElementById("cmpTitle").textContent = "戦略ごとの成績（" + from + " 〜 " + to + "）";
     document.getElementById("cmpSub").textContent = "同じ元手" + yen(capital) + "円・再投資あり・コスト3bp・" + days.length + "取引日";
@@ -586,7 +589,7 @@
     const sc = v().scaled;
     document.getElementById("scaleNote").hidden = !sc;
     document.getElementById("scaleNote").textContent = sc
-      ? "元手 " + yen(capital) + "円・" + startDate + "開始で引き伸ばした概算です（元のシミュレーションは元手500,000円・" + ALL_DATES[0] + "開始）。1株単位の端数や「予算内で買えない銘柄」の影響は元のままなので、株数と金額は目安です。"
+      ? "元手 " + yen(capital) + "円・" + startDate + "〜" + endDate + " で引き伸ばした概算です（元のシミュレーションは元手500,000円・" + FIRST_DATE + "〜" + LAST_DATE + "）。1株単位の端数や「予算内で買えない銘柄」の影響は元のままなので、株数と金額は目安です。"
       : "";
     renderToday();
     drawSpark();
@@ -613,38 +616,43 @@
   // 元手・開始日の入力
   const inCap = document.getElementById("inCapital");
   const inStart = document.getElementById("inStart");
+  const inEnd = document.getElementById("inEnd");
   inCap.value = String(capital);
-  inStart.value = startDate;
-  inStart.min = ALL_DATES[0];
-  inStart.max = ALL_DATES[ALL_DATES.length - 1];
+  inStart.value = startDate; inEnd.value = endDate;
+  [inStart, inEnd].forEach(el => { el.min = FIRST_DATE; el.max = LAST_DATE; });
   function applyInputs() {
     const c = Number(inCap.value);
     if (isFinite(c) && c >= 50000) capital = Math.round(c);
-    const s = inStart.value;
-    if (s && s >= ALL_DATES[0] && s <= ALL_DATES[ALL_DATES.length - 1]) startDate = s;
+    let s = inStart.value, e = inEnd.value;
+    if (s && s >= FIRST_DATE && s <= LAST_DATE) startDate = s;
+    if (e && e >= FIRST_DATE && e <= LAST_DATE) endDate = e;
+    if (endDate < startDate) { endDate = startDate; }   // 終了日が開始日より前なら合わせる
+    inStart.value = startDate; inEnd.value = endDate;
     curDate = null;
-    if (startDate.slice(0, 7) > curMonth) curMonth = startDate.slice(0, 7);
+    if (startDate.slice(0, 7) > curMonth || endDate.slice(0, 7) < curMonth) curMonth = endDate.slice(0, 7);
     render();
   }
   inCap.addEventListener("change", applyInputs);
   inStart.addEventListener("change", applyInputs);
+  inEnd.addEventListener("change", applyInputs);
   const savedNote = document.getElementById("savedNote");
   function showSavedNote() {
     savedNote.textContent = saved
-      ? "保存済み: 元手 " + yen(saved.capital) + "円 / " + saved.startDate + (saved.savedAt ? "（" + saved.savedAt + "）" : "")
-      : "保存なし（初期値: 元手 " + yen(DATA.account) + "円 / " + ALL_DATES[0] + "）";
+      ? "保存済み: 元手 " + yen(saved.capital) + "円 / " + saved.startDate + "〜" + (saved.endDate || LAST_DATE) + (saved.savedAt ? "（" + saved.savedAt + "）" : "")
+      : "保存なし（初期値: 元手 " + yen(DATA.account) + "円 / " + FIRST_DATE + "〜" + LAST_DATE + "）";
   }
   document.getElementById("btnSave").addEventListener("click", () => {
     applyInputs();
-    saved = { capital: capital, startDate: startDate, savedAt: new Date().toLocaleString("ja-JP", { dateStyle: "short", timeStyle: "short" }) };
+    saved = { capital: capital, startDate: startDate, endDate: endDate, savedAt: new Date().toLocaleString("ja-JP", { dateStyle: "short", timeStyle: "short" }) };
     try { localStorage.setItem(STORE_KEY, JSON.stringify(saved)); } catch (e) { /* 保存できない環境では表示だけ更新 */ }
     showSavedNote();
   });
   document.getElementById("btnReset").addEventListener("click", () => {
     capital = saved ? saved.capital : DATA.account;
-    startDate = (saved && ALL_DATES.includes(saved.startDate)) ? saved.startDate : ALL_DATES[0];
-    inCap.value = String(capital); inStart.value = startDate;
-    curMonth = DATA.months[DATA.months.length - 1];
+    startDate = (saved && saved.startDate >= FIRST_DATE && saved.startDate <= LAST_DATE) ? saved.startDate : FIRST_DATE;
+    endDate = (saved && saved.endDate && saved.endDate >= startDate && saved.endDate <= LAST_DATE) ? saved.endDate : LAST_DATE;
+    inCap.value = String(capital); inStart.value = startDate; inEnd.value = endDate;
+    curMonth = endDate.slice(0, 7);
     curDate = null; render();
   });
   showSavedNote();
