@@ -1,0 +1,55 @@
+{
+    "universe":  {
+                     "csv":  "data/raw/universe/nikkei225_pit.csv",
+                     "topNPopular":  10,
+                     "changesCsv":  "data/raw/universe/nikkei225_changes.csv"
+                 },
+    "data":  {
+                 "historyYears":  5,
+                 "tickerDir":  "data/raw/stocks/prime_since2000",
+                 "dailyRankingCsv":  "data/processed/nikkei_pit/daily_turnover_ranking_5y.csv"
+             },
+    "features":  {
+                     "turnoverMaWindow":  5
+                 },
+    "skabu":  {
+                  "tickerDir":  "data/raw/stocks/prime_since2000",
+                  "outputDir":  "reports/nikkei_pit/skabu",
+                  "startDate":  "2022-01-12",
+                  "costBpsList":  [
+                                      0,
+                                      3
+                                  ],
+                  "taxRate":  0.20315,
+                  "scenarios":  [
+                                    {
+                                        "name":  "close_to_open_lag1_account50",
+                                        "mode":  "close_to_open_lag1",
+                                        "accountCash":  500000,
+                                        "dailyBudget":  500000
+                                    },
+                                    {
+                                        "name":  "close_to_open_lag1_account50_compound",
+                                        "mode":  "close_to_open_lag1",
+                                        "accountCash":  500000,
+                                        "dailyBudget":  500000,
+                                        "compound":  true,
+                                        "budgetRatio":  1
+                                    },
+                                    {
+                                        "name":  "open_to_open_account100",
+                                        "mode":  "open_to_open",
+                                        "accountCash":  1000000,
+                                        "dailyBudget":  500000
+                                    },
+                                    {
+                                        "name":  "open_to_open_account100_compound",
+                                        "mode":  "open_to_open",
+                                        "accountCash":  1000000,
+                                        "dailyBudget":  500000,
+                                        "compound":  true,
+                                        "budgetRatio":  0.5
+                                    }
+                                ]
+              }
+}

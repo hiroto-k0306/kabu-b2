@@ -1,0 +1,26 @@
+{
+  "universe": {
+    "csv": "data/raw/universe/prime.csv",
+    "topNPopular": 10
+  },
+  "data": {
+    "historyYears": 5,
+    "tickerDir": "data/raw/stocks/prime_since2000",
+    "dailyRankingCsv": "data/processed/prime/daily_turnover_ranking_5y.csv"
+  },
+  "features": {
+    "turnoverMaWindow": 5
+  },
+  "skabu": {
+    "tickerDir": "data/raw/stocks/prime_since2000",
+    "outputDir": "reports/prime/skabu",
+    "startDate": "2022-01-12",
+    "costBpsList": [0, 3],
+    "taxRate": 0.20315,
+    "scenarios": [
+      { "name": "close_to_open_lag1_account50", "mode": "close_to_open_lag1", "accountCash": 500000, "dailyBudget": 500000 },
+      { "name": "open_to_open_account50", "mode": "open_to_open", "accountCash": 500000, "dailyBudget": 500000 },
+      { "name": "open_to_open_account100", "mode": "open_to_open", "accountCash": 1000000, "dailyBudget": 500000 }
+    ]
+  }
+}

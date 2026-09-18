@@ -1,0 +1,16 @@
+﻿{
+  "universe": { "csv": "data/raw/universe/prime.csv", "topNPopular": 3 },
+  "data": { "dailyRankingCsv": "data/processed/b3l/daily_picks_top3.csv" },
+  "skabu": {
+    "tickerDir": "data/raw/stocks/prime_since2000",
+    "priceFromDate": "2021-06-01",
+    "startDate": "2022-01-12",
+    "outputDir": "reports/b3l_top3/skabu",
+    "costBpsList": [3],
+    "taxRate": 0.20315,
+    "scenarios": [
+      { "name": "b3l_top3_account50", "mode": "close_to_open_lag1", "accountCash": 500000, "dailyBudget": 500000 },
+      { "name": "b3l_top3_compound", "mode": "close_to_open_lag1", "accountCash": 500000, "dailyBudget": 500000, "compound": true, "budgetRatio": 1 }
+    ]
+  }
+}

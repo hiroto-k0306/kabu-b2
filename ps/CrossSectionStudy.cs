@@ -31,6 +31,8 @@ public class CrossSectionStudy
         public string[] Picks;
         // 各信号の上位topKの、順位ごとの夜間リターン（README 25.）
         public double[][] PickRets;
+        // includeLatest のときだけ: B3L の候補を順位順に "コード:スコア:終値:値動き" で並べたもの
+        public List<string> Candidates;
         // RunWithGroups のときだけ: グループ番号(1,2)ごとの 全銘柄等分 / 平均売買代金上位 topK の等分 のリターン
         public double[] GroupEw;
         public double[] GroupTop;
@@ -55,6 +57,12 @@ public class CrossSectionStudy
 
     // groupOf: 銘柄コード → グループ番号（1 または 2）。null ならグループ集計をしない
     public static List<DayRow> RunWithGroups(string tickerDir, string n225Csv, double minTurnover, int minEligible, int topK, string logPath, double minRawPrice, Dictionary<string, int> groupOf)
+    {
+        return RunWithGroups(tickerDir, n225Csv, minTurnover, minEligible, topK, logPath, minRawPrice, groupOf, false);
+    }
+
+    // includeLatest = true のとき、t+1・t+2 のデータが無い最新日も対象にする（リターンは NaN、候補リストだけ使う）
+    public static List<DayRow> RunWithGroups(string tickerDir, string n225Csv, double minTurnover, int minEligible, int topK, string logPath, double minRawPrice, Dictionary<string, int> groupOf, bool includeLatest)
     {
         // --- 暦（日経平均の営業日） ---
         var calDates = new List<string>();
@@ -176,17 +184,19 @@ public class CrossSectionStudy
         {
             to20prev.Step(t, TO); to20incl.Step(t, TO); to5.Step(t, TO); to20b.Step(t, TO);
             on250.Step(t, ON); on60.Step(t, ON); id250.Step(t, ID); cc250.Step(t, CC); cc250sq.Step(t, CC2);
-            if (t + 2 >= T) continue;
+            bool latest = (t + 2 >= T);
+            if (latest && !includeLatest) continue;
 
             for (int k = 0; k < K; k++) scores[k].Clear();
             int eligible = 0; double sumRet = 0;
             for (int g = 0; g < 3; g++) { gLists[g].Clear(); gSum[g] = 0; gCnt[g] = 0; }
             for (int s = 0; s < S; s++)
             {
-                if (!ok[s][t] || !ok[s][t + 1] || !ok[s][t + 2]) continue;
+                if (!ok[s][t]) continue;
+                if (!latest && (!ok[s][t + 1] || !ok[s][t + 2])) continue;
                 if (to20incl.Cnt[s] < 15 || to20incl.Sum[s] / to20incl.Cnt[s] < minTurnover) continue;
                 if (minRawPrice > 0 && !(rawC[s][t] >= minRawPrice)) continue;
-                double ret = (double)aO[s][t + 2] / aC[s][t + 1] - 1;
+                double ret = latest ? double.NaN : (double)aO[s][t + 2] / aC[s][t + 1] - 1;
                 rets[s] = ret;
                 eligible++; sumRet += ret;
                 int gi = groupIdx[s];
@@ -239,10 +249,12 @@ public class CrossSectionStudy
             }
 
             var row = new DayRow();
-            row.Date = calDates[t]; row.BuyDate = calDates[t + 1]; row.SellDate = calDates[t + 2];
+            row.Date = calDates[t];
+            row.BuyDate = (t + 1 < T) ? calDates[t + 1] : "";
+            row.SellDate = (t + 2 < T) ? calDates[t + 2] : "";
             row.Eligible = eligible;
-            row.MarketEw = sumRet / eligible;
-            row.N225 = n225Open[t + 2] / n225Close[t + 1] - 1;
+            row.MarketEw = latest ? double.NaN : sumRet / eligible;
+            row.N225 = latest ? double.NaN : n225Open[t + 2] / n225Close[t + 1] - 1;
             row.Signal = new double[K];
             row.Picks = new string[K];
             row.PickRets = new double[K][];
@@ -282,6 +294,22 @@ public class CrossSectionStudy
                 for (int j = 0; j < topK; j++) pr[j] = rets[chosen[j]];
                 row.PickRets[k] = pr;
             }
+            if (latest)
+            {
+                // B3L（値動きが中央値以下の銘柄）の候補を順位順に並べる
+                var list = scores[8];
+                list.Sort(delegate (KeyValuePair<double, int> x, KeyValuePair<double, int> y)
+                {
+                    int c = y.Key.CompareTo(x.Key);
+                    return c != 0 ? c : x.Value.CompareTo(y.Value);
+                });
+                row.Candidates = new List<string>();
+                foreach (var kv in list)
+                {
+                    int s = kv.Value;
+                    row.Candidates.Add(codes[s] + ":" + kv.Key.ToString("F4") + ":" + rawC[s][t].ToString("F1") + ":" + volOf[s].ToString("F4"));
+                }
+            }
             if (groupOf != null)
             {
                 row.GroupEw = new double[3]; row.GroupTop = new double[3]; row.GroupCount = new int[3]; row.GroupPicks = new string[3];
@@ -307,6 +335,19 @@ public class CrossSectionStudy
         return rows;
     }
 
+
+    // README 28.: 最新日（t）までのデータだけで B3L（B2）の候補を順位付けして返す。
+    // 戻り値の先頭が判断日、その後が「コード:スコア:実際の終値:値動き」の並び（上位 maxCodes 件）
+    public static List<string> LatestPicks(string tickerDir, string n225Csv, double minTurnover, int minEligible, int maxCodes, string logPath)
+    {
+        var rows = RunWithGroups(tickerDir, n225Csv, minTurnover, minEligible, 1, logPath, 0, null, true);
+        var last = rows[rows.Count - 1];
+        var res = new List<string>();
+        res.Add(last.Date);
+        int n = Math.Min(maxCodes, last.Candidates.Count);
+        for (int i = 0; i < n; i++) res.Add(last.Candidates[i]);
+        return res;
+    }
     public class Roll
     {
         public double[] Sum;

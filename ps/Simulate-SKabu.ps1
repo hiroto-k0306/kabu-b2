@@ -44,6 +44,18 @@ $ranking = Import-TopRanking -Config $config
 $neededCodes = @($ranking.Values | ForEach-Object { $_ } | Sort-Object -Unique)
 # インバースETFで日経の値動きを打ち消すシナリオ（scenario.hedge = { code, multiple, betaCsv }）
 # betaCsv の beta は判断日までに売却が済んだデータだけで推定した値（ps\Test-InverseHedge.ps1 の出力）
+# ランキングCSVに weight 列があれば、銘柄ごとの予算比率として使う（日経上位10とB2上位3を半分ずつ等）
+$rankWeight = @{}
+$rankCsvPath = Resolve-ProjectPath $config.data.dailyRankingCsv
+if ((Get-Content $rankCsvPath -TotalCount 1) -match "weight") {
+    foreach ($row in (Import-Csv $rankCsvPath -Encoding UTF8)) {
+        if ([int]$row.rank -gt $topN) { continue }
+        if ($sk.startDate -and [string]::CompareOrdinal($row.date, [string]$sk.startDate) -lt 0) { continue }
+        if (-not $rankWeight.ContainsKey($row.date)) { $rankWeight[$row.date] = New-Object System.Collections.Generic.List[double] }
+        $rankWeight[$row.date].Add([double]$row.weight)
+    }
+    Write-Host "weight 列を使用: $($rankWeight.Count) 日"
+}
 $hedgeBeta = @{}
 foreach ($sc in $sk.scenarios) {
     if ($null -eq $sc.hedge) { continue }
@@ -112,15 +124,22 @@ function Get-Allocation {
     # 予算を等分して切り捨て、余りで1株ずつ足す
     #   FillMode "value": 保有額が一番少ない銘柄から足す（既定）
     #   FillMode "rank" : 順位が上の銘柄から順に1株ずつ足す（README 25.）
-    param([double[]]$LockPrices, [double]$Budget, [string]$FillMode = "value")
+    #   Weights: 銘柄ごとの予算の比率（合計1に正規化して使う）。省略時は等分
+    param([double[]]$LockPrices, [double]$Budget, [string]$FillMode = "value", [double[]]$Weights = $null)
     $n = $LockPrices.Length
     $shares = [int[]]::new($n)
     if ($n -eq 0 -or $Budget -le 0) { return , $shares }
-    $per = $Budget / $n
+    $w = [double[]]::new($n)
+    if ($null -ne $Weights -and $Weights.Length -eq $n) {
+        $sum = 0.0; foreach ($x in $Weights) { $sum += $x }
+        for ($k = 0; $k -lt $n; $k++) { $w[$k] = $Weights[$k] / $sum }
+    } else {
+        for ($k = 0; $k -lt $n; $k++) { $w[$k] = 1.0 / $n }
+    }
     $remaining = $Budget
     for ($k = 0; $k -lt $n; $k++) {
         $lp = $LockPrices[$k]
-        $s = [Math]::Floor($per / $lp)
+        $s = [Math]::Floor($Budget * $w[$k] / $lp)
         $shares[$k] = [int]$s
         $remaining -= $s * $lp
     }
@@ -304,7 +323,9 @@ function Invoke-SKabuSimulation {
                     if ($hedgeOk) { $stockWeight = 1.0 / (1.0 + $beta / [double]$Scenario.hedge.multiple) }
                 }
                 if (-not $hedgeOk) { $codes = [string[]]@(); $nStock = 0 }
-                if ($nStock -gt 0) { $shares = Get-Allocation -LockPrices $locks -Budget ($budget * $stockWeight) -FillMode $fillMode }
+                $wArr = $null
+                if ($rankWeight.ContainsKey($t) -and $rankWeight[$t].Count -eq $nStock) { $wArr = [double[]]$rankWeight[$t].ToArray() }
+                if ($nStock -gt 0) { $shares = Get-Allocation -LockPrices $locks -Budget ($budget * $stockWeight) -FillMode $fillMode -Weights $wArr }
                 else { $shares = [int[]]@() }
                 if ($null -ne $Scenario.hedge -and $hedgeOk -and $nStock -gt 0) {
                     $etfCode = [string]$Scenario.hedge.code
