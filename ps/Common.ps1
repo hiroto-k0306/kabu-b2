@@ -460,3 +460,61 @@ function Invert-Matrix {
     }
     return , $inv
 }
+
+
+# --- 東証の営業日 ---
+# 休業日 = 土日 + 祝日 + 年末年始(12/31〜1/3)。祝日は法律の規則から作った内蔵リストなので、
+# 年をまたぐ前に取引所のカレンダーで確認して足すこと。
+$script:JpxHolidays = @(
+    "2026-01-01", "2026-01-02", "2026-01-12", "2026-02-11", "2026-02-23", "2026-03-20",
+    "2026-04-29", "2026-05-03", "2026-05-04", "2026-05-05", "2026-05-06", "2026-07-20",
+    "2026-08-11", "2026-09-21", "2026-09-22", "2026-09-23", "2026-10-12", "2026-11-03",
+    "2026-11-23", "2026-12-31",
+    "2027-01-01", "2027-01-02", "2027-01-03", "2027-01-11", "2027-02-11", "2027-02-23",
+    "2027-03-21", "2027-03-22", "2027-04-29", "2027-05-03", "2027-05-04", "2027-05-05",
+    "2027-07-19", "2027-08-11", "2027-09-20", "2027-09-23", "2027-10-11", "2027-11-03",
+    "2027-11-23", "2027-12-31"
+)
+$script:JpxHolidayMaxDate = ($script:JpxHolidays | Sort-Object)[-1]
+
+# 曜日の日本語表記。dot-source した側でもそのまま $dowJa として使える。
+$dowJa = @{ "Sunday" = "日"; "Monday" = "月"; "Tuesday" = "火"; "Wednesday" = "水"; "Thursday" = "木"; "Friday" = "金"; "Saturday" = "土" }
+
+function Format-JpDate {
+    <# 2026-09-24 -> 9月24日(木) #>
+    param([Parameter(Mandatory)][datetime]$Date)
+    "{0}月{1}日({2})" -f $Date.Month, $Date.Day, $dowJa[$Date.DayOfWeek.ToString()]
+}
+
+function Get-JpxHolidays { return $script:JpxHolidays }
+
+function Test-TradingDay {
+    <# 東証が開いている日なら $true。内蔵の祝日リストを超える日付は警告を出す。 #>
+    param([Parameter(Mandatory)][datetime]$Date)
+    if ($Date.DayOfWeek -eq "Saturday" -or $Date.DayOfWeek -eq "Sunday") { return $false }
+    $s = $Date.ToString("yyyy-MM-dd")
+    if ([string]::Compare($s, $script:JpxHolidayMaxDate) -gt 0) {
+        Write-Warning "$s は内蔵の祝日リスト(〜$script:JpxHolidayMaxDate)の範囲外。Common.ps1 の JpxHolidays に追記すること"
+    }
+    return -not ($script:JpxHolidays -contains $s)
+}
+
+function Get-NextTradingDay {
+    <# Date の翌営業日を返す #>
+    param([Parameter(Mandatory)][datetime]$Date)
+    for ($i = 1; $i -le 30; $i++) {
+        $x = $Date.AddDays($i)
+        if (Test-TradingDay -Date $x) { return $x }
+    }
+    return $Date.AddDays(1)
+}
+
+function Get-PrevTradingDay {
+    <# Date の前営業日を返す #>
+    param([Parameter(Mandatory)][datetime]$Date)
+    for ($i = 1; $i -le 30; $i++) {
+        $x = $Date.AddDays(-$i)
+        if (Test-TradingDay -Date $x) { return $x }
+    }
+    return $Date.AddDays(-1)
+}

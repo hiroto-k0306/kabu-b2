@@ -27,29 +27,8 @@ function Get-LimitWidth {
 $names = @{}; $sectors = @{}
 foreach ($u in (Import-Csv data/raw/universe/prime.csv -Encoding UTF8)) { $names[$u.code] = $u.name; $sectors[$u.code] = $u.sector }
 
-# 東証の休業日（土日＋祝日＋年末年始12/31〜1/3）。祝日は法律の規則から作った内蔵リストで、念のため取引所のカレンダーで確認すること
-$holidays = @(
-    "2026-01-01", "2026-01-02", "2026-01-12", "2026-02-11", "2026-02-23", "2026-03-20",
-    "2026-04-29", "2026-05-03", "2026-05-04", "2026-05-05", "2026-05-06", "2026-07-20",
-    "2026-08-11", "2026-09-21", "2026-09-22", "2026-09-23", "2026-10-12", "2026-11-03",
-    "2026-11-23", "2026-12-31",
-    "2027-01-01", "2027-01-02", "2027-01-03", "2027-01-11", "2027-02-11", "2027-02-23",
-    "2027-03-21", "2027-03-22", "2027-04-29", "2027-05-03", "2027-05-04", "2027-05-05",
-    "2027-07-19", "2027-08-11", "2027-09-20", "2027-09-23", "2027-10-11", "2027-11-03",
-    "2027-11-23", "2027-12-31"
-)
-$dowJa = @{ "Sunday" = "日"; "Monday" = "月"; "Tuesday" = "火"; "Wednesday" = "水"; "Thursday" = "木"; "Friday" = "金"; "Saturday" = "土" }
-function Get-NextTradingDay {
-    param([string]$Date)
-    $d = [datetime]$Date
-    for ($i = 1; $i -le 30; $i++) {
-        $x = $d.AddDays($i)
-        if ($x.DayOfWeek -eq "Saturday" -or $x.DayOfWeek -eq "Sunday") { continue }
-        if ($holidays -contains $x.ToString("yyyy-MM-dd")) { continue }
-        return $x
-    }
-    return $d.AddDays(1)
-}
+# 東証の休業日(土日+祝日+年末年始)と翌営業日の判定は Common.ps1 に集約している。
+# 祝日リストの更新は ps\Common.ps1 の $script:JpxHolidays を直すこと。
 function Format-Day {
     param([datetime]$D)
     "{0}月{1}日({2})" -f $D.Month, $D.Day, $dowJa[$D.DayOfWeek.ToString()]

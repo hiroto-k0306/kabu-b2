@@ -3,6 +3,12 @@
 # 1ファイルに調整済み価格(open/high/low/close/volume)と、分割・配当調整前の実際の価格(raw_*)の両方を持つ。
 # 使い方: $env:KABU_CONFIG = "ps/config.prime.json"; powershell -File ps\Fetch-UniversePrices.ps1
 
+param(
+    # 既にあるCSVも取り直す。1銘柄ずつ .tmp に書いてから置き換えるので、
+    # 失敗した銘柄は前のファイルがそのまま残る(まとめて消す必要がない)。
+    [switch]$Refresh
+)
+
 $ErrorActionPreference = "Stop"
 . "$PSScriptRoot\Common.ps1"
 
@@ -17,7 +23,7 @@ $i = 0
 foreach ($u in $universe) {
     $i++
     $path = Join-Path $tickerDir "$($u.code).csv"
-    if ((Test-Path $path) -and (Get-Item $path).Length -gt 0) { $skipped++; continue }
+    if (-not $Refresh -and (Test-Path $path) -and (Get-Item $path).Length -gt 0) { $skipped++; continue }
 
     $startDate = ""
     if ($config.data.startDate) { $startDate = [string]$config.data.startDate }

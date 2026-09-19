@@ -39,6 +39,29 @@ powershell -File ps\Get-TodayPicks.ps1 -Budget 500000
 
 `Fetch-UniversePrices.ps1` は「ファイルがあれば取得しない」作りなので、全銘柄を更新するには既存CSVを消す必要があり、約25分かかる。検証だけが目的なら、毎日取得せず数日〜1週間おきにまとめて取得しても、各判断日の結果は同じように再現できる（ただし分割・配当で過去の調整済み価格が変わると、当時の判断と少しずれる可能性がある）。
 
+## 2-2. 自動で回す（タスクスケジューラ）
+
+上の「毎営業日」を手で叩く代わりに、Windows のタスクスケジューラに登録できる。管理者権限は不要。
+
+```powershell
+powershell -File ps\Register-ScheduledTasks.ps1            # 登録（17時=更新、22時=確認）
+powershell -File ps\Register-ScheduledTasks.ps1 -Show      # 状態と次回実行を見る
+powershell -File ps\Register-ScheduledTasks.ps1 -Unregister # 取り消す
+```
+
+| 時刻 | 中身 |
+|---|---|
+| 17:00 | `Invoke-DailyUpdate.ps1` — 株価と指数を取り直し、ランキング・B2の選定・6通りのシミュレーション・カレンダー・翌営業日の銘柄までを一度に更新する（40〜50分） |
+| 22:00 | `Test-DailyUpdate.ps1` — 当日のデータがそろっているか確かめ、駄目なら取り直す |
+
+- **休業日は両方とも何もしない。** 土日と祝日は `ps\Common.ps1` の `$script:JpxHolidays` で判定する。年をまたぐ前にこのリストを足すこと（範囲外の日付を渡すと警告が出る）。
+- 17時の更新は `Fetch-UniversePrices.ps1 -Refresh` を使う。1銘柄ずつ `.tmp` に書いてから置き換えるので、途中で失敗しても失敗した銘柄は前のファイルが残る（CSVをまとめて消す必要はない）。
+- 16時より前に `Invoke-DailyUpdate.ps1` を実行すると、取引時間中の値をつかまないように止まる。手で動かすときは `-Force`。
+- ログは `logs\daily_YYYYMMDD.log` と `logs\check_YYYYMMDD.log`。結果は `logs\last_run.json` / `logs\last_check.json` に残る（`logs\` は追跡しない）。
+- 22時の確認は、N225の最終日・銘柄CSVの更新時刻・抜き取りした銘柄の最終行・`today_picks.json` の `asOf` を見る。過去の日を調べ直すときは `-AsOf 2026-09-18`、取り直しをさせたくないときは `-NoRepair`。
+- **PCがスリープ・電源断のときは動かない。** `StartWhenAvailable` を入れてあるので、起動後に取りこぼした回をできるだけ早く実行する。ログオンしている間だけ動く設定（パスワードを預けずに済ませるため）。
+
+
 ## 3. 結果を突き合わせる
 
 ```powershell
@@ -61,7 +84,10 @@ $env:KABU_CONFIG = "ps/config.b3l.json"; powershell -File ps\Simulate-SKabu.ps1
 `web\calendar.html` の `const DATA = {...}` と `const TODAY = {...}` が埋め込みデータ。
 
 - `TODAY` は `reports\today_picks.json` の中身で置き換える
-- `DATA` は `reports\b3l_2026\calendar_data.json` の中身で置き換える（シミュレーション結果から作るファイル）
+- `DATA` は `reports\b3l_2026\calendar_data.json` の中身で置き換える（シミュレーション結果から `ps\Export-CalendarData.ps1` が作る）
+
+この置き換えは `powershell -File ps\Update-Calendar.ps1` が行う（置き換え前の版は `calendar.html.bak` に残る）。
+株価の更新からカレンダーまで一度にやるなら `powershell -File ps\Update-B3L2026.ps1`。
 
 ## 注意
 
