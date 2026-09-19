@@ -48,5 +48,8 @@ Invoke-Step -Title "calendar_data.json の作成" -Script "Export-CalendarData.p
 Invoke-Step -Title "翌営業日に買う銘柄" -Script "Get-TodayPicks.ps1" -ScriptArgs @("-Budget", "$Budget")
 Invoke-Step -Title "calendar.html への埋め込み" -Script "Update-Calendar.ps1"
 
+# 5-2. 未知データでの成績を台帳に足す(既に書いた日は触らない)
+Invoke-Step -Title "未知データの検証結果を記録" -Script "Update-ForwardTest.ps1"
+
 Write-Host ""
 Write-Host "全部完了。web\calendar.html をブラウザで開く" -ForegroundColor Green

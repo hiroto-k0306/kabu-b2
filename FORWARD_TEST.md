@@ -89,6 +89,24 @@ $env:KABU_CONFIG = "ps/config.b3l.json"; powershell -File ps\Simulate-SKabu.ps1
 この置き換えは `powershell -File ps\Update-Calendar.ps1` が行う（置き換え前の版は `calendar.html.bak` に残る）。
 株価の更新からカレンダーまで一度にやるなら `powershell -File ps\Update-B3L2026.ps1`。
 
+## 5. 未知データでの成績を残す
+
+モデルを固めた後に出てきたデータでの成績は `FORWARD_TEST_RESULTS.md` に積み上がる。
+元になる台帳は `reports\forward_test\daily.csv`（1行=1日1系統）と `trades.csv`（1行=1建玉）。
+
+```powershell
+powershell -File ps\Update-ForwardTest.ps1              # 台帳に足して読み物を作り直す
+powershell -File ps\Update-ForwardTest.ps1 -Rebuild     # 台帳ごと作り直す（普段は使わない）
+```
+
+- `Update-B3L2026.ps1` の最後で呼ばれるので、17時の自動更新に含まれる。
+- **一度書いた行は書き換えない。** 毎日シミュレーションをやり直すと、分割・配当で過去の
+  調整済み価格が変わったときに昔の数字まで動いてしまい、「その時どうだったか」の記録に
+  ならないため。まだ無い日付だけを足す。何度実行しても増えない。
+- 区切りは **2026-09-17に買った分から**（`-StartDate` で変えられる）。配布時点のカレンダーが
+  持っていた最後の建玉が9/16買いなので、その次の営業日から先が未知データにあたる。
+
+
 ## 注意
 
 - 株価データは**2022年1月以降**。B2は250営業日の助走が必要なので、このデータで計算できるのは2023年以降。
