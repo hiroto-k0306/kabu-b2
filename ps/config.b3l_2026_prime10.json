@@ -1,0 +1,15 @@
+﻿{
+  "universe": { "csv": "data/raw/universe/prime.csv", "topNPopular": 10 },
+  "data": { "dailyRankingCsv": "data/processed/combo/prime_top10.csv" },
+  "skabu": {
+    "tickerDir": "data/raw/stocks/prime_since2000",
+    "priceFromDate": "2025-01-01",
+    "startDate": "2026-01-01",
+    "outputDir": "reports/b3l_2026/prime10",
+    "costBpsList": [3],
+    "taxRate": 0.20315,
+    "scenarios": [
+      { "name": "prime10_compound", "mode": "close_to_open_lag1", "accountCash": 500000, "dailyBudget": 500000, "compound": true, "budgetRatio": 1 }
+    ]
+  }
+}

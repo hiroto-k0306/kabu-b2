@@ -1,0 +1,21 @@
+# 取得・展開した株価データ(約1.1GB)。
+# data/prices_zip/*.zip から展開するか、ps\Fetch-UniversePrices.ps1 で取り直せる。
+data/raw/stocks/
+
+# シミュレーションと信号検証の中間出力。ps\Update-B3L2026.ps1 で作り直せる。
+# reports/b3l_2026/calendar_data.json だけは配布物なので追跡する。
+reports/b3l_2026/*/
+reports/cross_section/
+reports/prime/
+reports/nikkei_pit/
+reports/*invalid_rows.log
+
+# 自動取得のログ
+logs/
+
+# バックアップ・一時ファイル
+*.bak
+*.tmp
+
+# Claude Code のローカル設定
+.claude/settings.local.json

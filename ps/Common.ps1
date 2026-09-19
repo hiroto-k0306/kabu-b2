@@ -386,6 +386,14 @@ function Get-YahooChart {
             $row["raw_low"] = [double]$l * $splitFactor
             $row["raw_close"] = [double]$c * $splitFactor
         }
+        # 極端な分割や異常値の銘柄では調整比率が破綻し、±∞ になることがある。
+        # そのまま書くと PowerShell 側が [double] に読み戻せず落ちるので、NaN にして
+        # Test-PriceRowValid に「不正な行」として捨てさせる(C#側の ParseD も NaN 扱い)。
+        foreach ($key in @($row.Keys)) {
+            if ($key -eq "date" -or $key -eq "code") { continue }
+            $val = [double]$row[$key]
+            if ([double]::IsInfinity($val)) { $row[$key] = [double]::NaN }
+        }
         $rows.Add([PSCustomObject]$row)
     }
     return $rows
