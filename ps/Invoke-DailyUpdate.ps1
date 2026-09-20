@@ -41,9 +41,9 @@ function Save-Status {
 Write-Log "=== 日次更新 開始 ($todayStr $(Format-JpDate -Date $today)) ==="
 
 if (-not $Force -and -not (Test-TradingDay -Date $today)) {
+    # last_run.json は上書きしない。22時/翌朝の確認が「直近に実際に動いた回」を
+    # 見られなくなるため。休業日に動いたことはこのログに残る。
     Write-Log "東証の休業日なので何もしない"
-    $status.ok = $true; $status.skipped = $true
-    Save-Status
     exit 0
 }
 

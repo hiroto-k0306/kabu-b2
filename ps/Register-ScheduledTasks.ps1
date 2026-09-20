@@ -1,11 +1,11 @@
-﻿# 日次更新(17時)と取得の確認(22時)を Windows のタスクスケジューラに登録する。
+﻿# 日次更新(17時)と取得の確認(翌朝8時)を Windows のタスクスケジューラに登録する。
 # 管理者権限は不要。ログオンしている間だけ動く(パスワードを預けなくて済む)。
 # 登録:   powershell -File ps\Register-ScheduledTasks.ps1
 # 確認:   powershell -File ps\Register-ScheduledTasks.ps1 -Show
 # 取り消し: powershell -File ps\Register-ScheduledTasks.ps1 -Unregister
 param(
     [string]$UpdateTime = "17:00",
-    [string]$CheckTime  = "22:00",
+    [string]$CheckTime  = "08:00",
     [int]$Budget = 500000,
     [switch]$Unregister,
     [switch]$Show
@@ -17,7 +17,7 @@ $root = Get-ProjectRoot
 
 $tasks = @(
     @{ name = "kabu-b2 daily update"; script = "Invoke-DailyUpdate.ps1"; time = $UpdateTime; desc = "営業日の大引け後に株価を取り直し、カレンダーと翌営業日の銘柄を更新する" }
-    @{ name = "kabu-b2 daily check";  script = "Test-DailyUpdate.ps1";  time = $CheckTime;  desc = "17時の更新が通ったかを確かめ、駄目なら取り直す" }
+    @{ name = "kabu-b2 daily check";  script = "Test-DailyUpdate.ps1";  time = $CheckTime;  desc = "前営業日の17時の更新が通ったかを確かめ、駄目なら取り直す" }
 )
 
 if ($Show) {
