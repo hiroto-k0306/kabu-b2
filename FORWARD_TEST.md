@@ -57,7 +57,7 @@ powershell -File ps\Register-ScheduledTasks.ps1 -Unregister # 取り消す
 - **17時の更新は休業日には何もしない。** 朝の確認は休業日でも動くが、見るのは直近の営業日なので、
   土日のうちは同じ日（金曜の分）を繰り返し確かめることになる。
 - 土日と祝日は `ps\Common.ps1` の `$script:JpxHolidays` で判定する。年をまたぐ前にこのリストを足すこと（範囲外の日付を渡すと警告が出る）。
-- 17時の更新は `Fetch-UniversePrices.ps1 -Refresh` を使う。1銘柄ずつ `.tmp` に書いてから置き換えるので、途中で失敗しても失敗した銘柄は前のファイルが残る（CSVをまとめて消す必要はない）。
+- 17時の更新は `Fetch-UniversePrices.ps1 -Refresh`（`config.prime_daily.json`、2020年以降）を使う。1銘柄ずつ `.tmp` に書いてから置き換えるので、途中で失敗しても失敗した銘柄は前のファイルが残る（CSVをまとめて消す必要はない）。
 - 16時より前に `Invoke-DailyUpdate.ps1` を実行すると、取引時間中の値をつかまないように止まる。手で動かすときは `-Force`。
 - ログは `logs\daily_YYYYMMDD.log` と `logs\check_YYYYMMDD.log`。結果は `logs\last_run.json` / `logs\last_check.json` に残る（`logs\` は追跡しない）。
 - 朝の確認が見るのは**直近の営業日**（金曜の分は土曜の朝、木曜の分が金曜が祝日なら金曜の朝）。17時以降に手で動かしたときだけ当日を見る。過去の日を調べ直すときは `-AsOf 2026-09-18`、取り直しをさせたくないときは `-NoRepair`。
@@ -77,7 +77,9 @@ PCを使わず、GitHub のサーバーで同じ処理を回す。`.github/workf
 | 毎日 7:43 | 取りこぼしの補完。直近の営業日の分が無いときだけ上と同じことをする |
 
 - 手元では `git pull` するだけで `web\calendar.html` と `reports\today_picks.json` が最新になる。
-- 毎回まっさらな環境なので、zip（2022年以降）を展開したうえで全銘柄を2000年から取り直す（1銘柄ずつ、60〜90分）。
+- 毎回まっさらな環境なので、zip（2022年以降）を展開したうえで全銘柄を2020年から取り直す（1銘柄ずつ）。全体で30分前後。
+  2022年からのB2には250営業日の助走が要るので2020年からにしてある。2000年から取った場合と2022年以降の結果が同じことは確認済み。
+  売買代金ランキングと比較用ユニバース（`data/processed/`）は2020年4月からになる（2000〜2019年分は git の履歴と kabuData に残る）。
 - 休業日かどうかの判定と取引時間中に動かない決まりは、タスクスケジューラ版と同じ（`Common.ps1` の祝日リストを使う）。
 - 失敗すると GitHub から失敗通知のメールが届く。ログは実行結果の Artifacts（`daily-logs`、30日保存）。
 - 手で動かすときは GitHub の Actions → daily-update → Run workflow。最新でも取り直すなら `force` にチェック。
@@ -100,7 +102,8 @@ $env:KABU_CONFIG = "ps/config.b3l.json"; powershell -File ps\Simulate-SKabu.ps1
 | `config.b3l.json` | B2 10銘柄（2022年開始） |
 | `config.b3l_top5.json` / `config.b3l_top3.json` | B2 5銘柄 / 3銘柄 |
 | `config.b3l_2026_top3/5/10.json` | B2 3/5/10銘柄（2026年開始・利益を再投資） |
-| `config.prime_long.json` | 株価取得用（2000年以降） |
+| `config.prime_long.json` | 株価取得用（2000年以降。新しいモデルを作るとき用） |
+| `config.prime_daily.json` | 日次更新の株価取得用（2020年以降。`Invoke-DailyUpdate.ps1` が使う） |
 | `config.prime.json` / `config.nikkei_pit.json` | 売買代金ランキング作成用 |
 
 ## 4. カレンダーを更新したいとき

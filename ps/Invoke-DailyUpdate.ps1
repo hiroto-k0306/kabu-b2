@@ -69,7 +69,7 @@ function Invoke-Step {
 }
 
 try {
-    Invoke-Step -Title "株価の取得(全銘柄を取り直す)" -Script "Fetch-UniversePrices.ps1" -ScriptArgs @("-Refresh") -Config "ps/config.prime_long.json"
+    Invoke-Step -Title "株価の取得(全銘柄を取り直す)" -Script "Fetch-UniversePrices.ps1" -ScriptArgs @("-Refresh") -Config "ps/config.prime_daily.json"
     Invoke-Step -Title "指数・為替の取得"             -Script "Fetch-MarketData.ps1"
 
     if ($PricesOnly) {
