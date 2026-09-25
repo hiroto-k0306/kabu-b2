@@ -55,13 +55,13 @@ function Test-Freshness {
     $problems = New-Object System.Collections.Generic.List[string]
 
     # 1. 日経平均(営業日カレンダーの元)が当日まで来ているか
-    $n225 = Join-Path $root "data\raw\market\daily_since2000\N225.csv"
+    $n225 = Join-Path $root "data/raw/market/daily_since2000/N225.csv"
     $n225Last = Get-LastDate $n225
     if ($n225Last -ne $targetStr) { $problems.Add("N225.csv の最終日が $n225Last (期待 $targetStr)") }
     else { Write-Log "  N225.csv: $n225Last  OK" }
 
     # 2. 銘柄CSVが当日に書き直されているか(更新時刻で素早く見る)
-    $tickerDir = Join-Path $root "data\raw\stocks\prime_since2000"
+    $tickerDir = Join-Path $root "data/raw/stocks/prime_since2000"
     if (-not (Test-Path $tickerDir)) {
         $problems.Add("$tickerDir がない")
         return $problems
@@ -82,7 +82,7 @@ function Test-Freshness {
     }
 
     # 4. 翌営業日の銘柄が当日のデータで作られているか
-    $picks = Join-Path $root "reports\today_picks.json"
+    $picks = Join-Path $root "reports/today_picks.json"
     if (-not (Test-Path $picks)) { $problems.Add("reports/today_picks.json がない") }
     else {
         $j = [IO.File]::ReadAllText($picks) | ConvertFrom-Json
@@ -125,7 +125,7 @@ if ($problems.Count -eq 0) {
     } else {
         Write-Log "--- 取り直しを実行する"
         # Invoke-DailyUpdate は当日基準で動くので、前営業日の分を取りに行くため -Force を渡す
-        & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root "ps\Invoke-DailyUpdate.ps1") -Budget $Budget -Force *>> $logPath
+        & (Get-PowerShellExe) -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root "ps/Invoke-DailyUpdate.ps1") -Budget $Budget -Force *>> $logPath
         $code = $LASTEXITCODE
         $repaired = $true
         Write-Log "取り直し終了 (exit $code)"

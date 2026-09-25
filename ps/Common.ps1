@@ -285,6 +285,11 @@ function Set-InvalidPriceRows {
     return $marked
 }
 
+function Get-PowerShellExe {
+    # 子スクリプトを今と同じ PowerShell で動かす(Windows の powershell.exe / Linux の pwsh)
+    (Get-Process -Id $PID).Path
+}
+
 function Resolve-ProjectPath {
     param([Parameter(Mandatory)][string]$RelativePath)
     $full = Join-Path (Get-ProjectRoot) $RelativePath

@@ -66,6 +66,25 @@ powershell -File ps\Register-ScheduledTasks.ps1 -Unregister # 取り消す
 - 休業日の17時は何もせず、`last_run.json` も書き換えない（直近に実際に動いた回が分かるようにするため）。
 - **PCがスリープ・電源断のときは動かない。** `StartWhenAvailable` を入れてあるので、起動後に取りこぼした回をできるだけ早く実行する。ログオンしている間だけ動く設定（パスワードを預けずに済ませるため）。
 
+## 2-3. 自動で回す（GitHub Actions）
+
+PCを使わず、GitHub のサーバーで同じ処理を回す。`.github/workflows/daily-update.yml` が `main` にあれば動く。
+**タスクスケジューラと二重に動かさないこと**（`powershell -File ps\Register-ScheduledTasks.ps1 -Unregister`）。
+
+| 時刻（日本時間） | 中身 |
+|---|---|
+| 平日 17:17 | `Test-NeedsUpdate.ps1` で当日の分が git に無いと分かったら、zip を展開して `Invoke-DailyUpdate.ps1 -Force` → `Test-DailyUpdate.ps1 -NoRepair` → `main` に commit |
+| 毎日 7:43 | 取りこぼしの補完。直近の営業日の分が無いときだけ上と同じことをする |
+
+- 手元では `git pull` するだけで `web\calendar.html` と `reports\today_picks.json` が最新になる。
+- 毎回まっさらな環境なので、zip（2022年以降）を展開したうえで全銘柄を2000年から取り直す（1銘柄ずつ、60〜90分）。
+- 休業日かどうかの判定と取引時間中に動かない決まりは、タスクスケジューラ版と同じ（`Common.ps1` の祝日リストを使う）。
+- 失敗すると GitHub から失敗通知のメールが届く。ログは実行結果の Artifacts（`daily-logs`、30日保存）。
+- 手で動かすときは GitHub の Actions → daily-update → Run workflow。最新でも取り直すなら `force` にチェック。
+- GitHub の都合で定時から数十分遅れることがある。取引時間中（9:00〜16:00）にずれ込んだ回は何もしない。
+- Linux の PowerShell 7 で動くので、`equity.png`（Windows のみのチャート）は作らない。また小数の桁数が
+  Windows（15桁）と違う（最大17桁）ため、初回は `data/processed` などのCSVが全行書き換わる。値は同じ。
+
 
 ## 3. 結果を突き合わせる
 
