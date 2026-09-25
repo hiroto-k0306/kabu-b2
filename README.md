@@ -14,7 +14,8 @@ ps/
   Fetch-UniversePrices.ps1      銘柄ごとの日足の取得（続きから再開できる）
   Fetch-MarketData.ps1          日経平均・ETF・S&P500・VIX・ドル円・10年国債利回りの取得
   Import-JpxListing.ps1         JPXの上場銘柄一覧(xlsx)から銘柄リストを作る
-  config.prime_long.json        株価取得の設定（2000年以降）
+  config.prime_long.json        株価取得の設定（2000年以降。2026-09-24時点の全件は kabuData リポジトリに保存）
+  config.prime_daily.json       日次更新の株価取得の設定（2020年以降）
   config.b3l.json               S株シミュレーション（10銘柄・2022年開始）
   config.b3l_top5.json          同（5銘柄）
   config.b3l_2026_top3/5/10.json 同（2026年開始・再投資あり）

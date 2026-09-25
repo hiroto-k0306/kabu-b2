@@ -61,7 +61,7 @@ function Invoke-Step {
     Write-Log "--- $Title"
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
     if ($Config) { $env:KABU_CONFIG = $Config } else { Remove-Item Env:\KABU_CONFIG -ErrorAction SilentlyContinue }
-    & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root "ps\$Script") @ScriptArgs *>> $logPath
+    & (Get-PowerShellExe) -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root "ps/$Script") @ScriptArgs *>> $logPath
     $code = $LASTEXITCODE
     $steps.Add([PSCustomObject]@{ name = $Title; script = $Script; seconds = [Math]::Round($sw.Elapsed.TotalSeconds); exitCode = $code })
     if ($code -ne 0) { throw "$Script が失敗した (exit $code)" }
@@ -69,7 +69,7 @@ function Invoke-Step {
 }
 
 try {
-    Invoke-Step -Title "株価の取得(全銘柄を取り直す)" -Script "Fetch-UniversePrices.ps1" -ScriptArgs @("-Refresh") -Config "ps/config.prime_long.json"
+    Invoke-Step -Title "株価の取得(全銘柄を取り直す)" -Script "Fetch-UniversePrices.ps1" -ScriptArgs @("-Refresh") -Config "ps/config.prime_daily.json"
     Invoke-Step -Title "指数・為替の取得"             -Script "Fetch-MarketData.ps1"
 
     if ($PricesOnly) {

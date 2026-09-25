@@ -18,7 +18,7 @@ function Invoke-Step {
     Write-Host "=== $Title ===" -ForegroundColor Cyan
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
     if ($Config) { $env:KABU_CONFIG = $Config } else { Remove-Item Env:\KABU_CONFIG -ErrorAction SilentlyContinue }
-    & powershell -NoProfile -File (Join-Path $root "ps\$Script") @ScriptArgs
+    & (Get-PowerShellExe) -NoProfile -File (Join-Path $root "ps/$Script") @ScriptArgs
     if ($LASTEXITCODE -ne 0) { throw "$Script が失敗した (exit $LASTEXITCODE)" }
     Write-Host ("--- $Title 完了 {0}" -f $sw.Elapsed)
 }

@@ -1,0 +1,4 @@
+﻿{
+  "universe": { "csv": "data/raw/universe/prime.csv", "topNPopular": 10 },
+  "data": { "historyYears": 7, "startDate": "2020-01-01", "tickerDir": "data/raw/stocks/prime_since2000" }
+}

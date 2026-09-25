@@ -14,6 +14,14 @@ param(
 
 $ErrorActionPreference = "Stop"
 . "$PSScriptRoot\Common.ps1"
+
+function ConvertTo-JsonNumber {
+    # 整数値の double は long にして返す(JSON に .0 を付けないため)
+    param([double]$Value)
+    if ($Value -eq [Math]::Floor($Value) -and [Math]::Abs($Value) -lt 1e15) { return [long]$Value }
+    return $Value
+}
+
 Set-Location (Get-ProjectRoot)
 
 # key, 出力ディレクトリ, シナリオ名, 表示名。順序が calendar.html のタブ順になる
@@ -63,8 +71,9 @@ foreach ($v in $variants) {
             code = $code; name = $(if ($names.ContainsKey($code)) { $names[$code] } else { $code })
             # 値段は0.5円刻みがあるので整数には丸めない。
             # 取得元が単精度なため 18499.9995... のような誤差が乗るので小数1桁までにする。
-            shares = $shares; buy = [Math]::Round($buy, 1); sell = [Math]::Round($sell, 1)
-            buyAmount = [Math]::Round($bAmt); sellAmount = [Math]::Round($sAmt); pnl = [Math]::Round($pnl)
+            # 整数になる値は整数型にする(PowerShell 7 の ConvertTo-Json は 3285.0 と書くため)
+            shares = $shares; buy = (ConvertTo-JsonNumber ([Math]::Round($buy, 1))); sell = (ConvertTo-JsonNumber ([Math]::Round($sell, 1)))
+            buyAmount = [long][Math]::Round($bAmt); sellAmount = [long][Math]::Round($sAmt); pnl = [long][Math]::Round($pnl)
         })
         $day.buyAmount  += $bAmt
         $day.sellAmount += $sAmt
@@ -75,8 +84,8 @@ foreach ($v in $variants) {
     $days = New-Object System.Collections.Generic.List[object]
     foreach ($d in ($byDay.Keys | Sort-Object)) {
         $day = $byDay[$d]
-        # 損益の大きい順。calendar.html は並び順をそのまま表に出す
-        $sorted = @($day.trades | Sort-Object pnl -Descending)
+        # 損益の大きい順(同じ損益はコード順)。calendar.html は並び順をそのまま表に出す
+        $sorted = @($day.trades | Sort-Object @{ Expression = "pnl"; Descending = $true }, @{ Expression = "code"; Descending = $false })
         $days.Add([PSCustomObject]@{
             date = $day.date; sellDate = $day.sellDate
             buyAmount = [int][Math]::Round($day.buyAmount); sellAmount = [int][Math]::Round($day.sellAmount)

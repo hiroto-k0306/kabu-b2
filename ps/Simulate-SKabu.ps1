@@ -548,26 +548,30 @@ foreach ($r in $results) {
     }
 }
 
-# 資産推移のチャート
-Add-Type -AssemblyName System.Windows.Forms.DataVisualization
-$chart = New-Object System.Windows.Forms.DataVisualization.Charting.Chart
-$chart.Width = 1100
-$chart.Height = 550
-$chart.ChartAreas.Add((New-Object System.Windows.Forms.DataVisualization.Charting.ChartArea))
-$chart.Legends.Add((New-Object System.Windows.Forms.DataVisualization.Charting.Legend)) | Out-Null
-foreach ($r in $results) {
-    $s = New-Object System.Windows.Forms.DataVisualization.Charting.Series
-    $s.ChartType = [System.Windows.Forms.DataVisualization.Charting.SeriesChartType]::Line
-    $s.Name = "$($r.scenario) cost$($r.cost_bps)bp (pre-tax equity)"
-    $s.BorderWidth = 2
-    foreach ($row in $r.daily) { $s.Points.AddXY($row.date, $row.equity) | Out-Null }
-    $chart.Series.Add($s)
+# 資産推移のチャート(Windows PowerShell 5.1 のみ。PowerShell 7 には Windows Forms のチャートがない)
+if ($PSVersionTable.PSEdition -eq "Desktop") {
+    Add-Type -AssemblyName System.Windows.Forms.DataVisualization
+    $chart = New-Object System.Windows.Forms.DataVisualization.Charting.Chart
+    $chart.Width = 1100
+    $chart.Height = 550
+    $chart.ChartAreas.Add((New-Object System.Windows.Forms.DataVisualization.Charting.ChartArea))
+    $chart.Legends.Add((New-Object System.Windows.Forms.DataVisualization.Charting.Legend)) | Out-Null
+    foreach ($r in $results) {
+        $s = New-Object System.Windows.Forms.DataVisualization.Charting.Series
+        $s.ChartType = [System.Windows.Forms.DataVisualization.Charting.SeriesChartType]::Line
+        $s.Name = "$($r.scenario) cost$($r.cost_bps)bp (pre-tax equity)"
+        $s.BorderWidth = 2
+        foreach ($row in $r.daily) { $s.Points.AddXY($row.date, $row.equity) | Out-Null }
+        $chart.Series.Add($s)
+    }
+    $title = New-Object System.Windows.Forms.DataVisualization.Charting.Title
+    $title.Text = "S-kabu simulation: account equity (yen, before tax)"
+    $chart.Titles.Add($title)
+    $chartPath = Join-Path $outDir "equity.png"
+    $chart.SaveImage($chartPath, [System.Windows.Forms.DataVisualization.Charting.ChartImageFormat]::Png)
+} else {
+    Write-Host "equity.png は作らない(Windows PowerShell 5.1 でのみ作成)"
 }
-$title = New-Object System.Windows.Forms.DataVisualization.Charting.Title
-$title.Text = "S-kabu simulation: account equity (yen, before tax)"
-$chart.Titles.Add($title)
-$chartPath = Join-Path $outDir "equity.png"
-$chart.SaveImage($chartPath, [System.Windows.Forms.DataVisualization.Charting.ChartImageFormat]::Png)
 
 Write-Host ""
 Write-Host "saved $(Join-Path $outDir 'summary.csv'), summary_by_year.csv, daily_*.csv, equity.png"

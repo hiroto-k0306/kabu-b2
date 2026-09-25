@@ -1,0 +1,79 @@
+# 営業日の大引け後に株価を取り直し、ランキング・B2の選定・シミュレーション・カレンダー・
+# 翌営業日の銘柄・未知データの台帳までを更新して main に commit する。
+# Windows のタスクスケジューラ(ps/Register-ScheduledTasks.ps1)の代わり。
+#
+# - 17:17(日本時間、平日)に更新。休業日は Test-NeedsUpdate.ps1 が何もしない判定を出す
+# - 7:43(毎日)は取りこぼしの補完。直近の営業日の分が git に無いときだけ更新する
+# - 手動実行(Actions の Run workflow)は、最新でも取り直したいときに force を付ける
+# - 失敗すると GitHub から失敗通知のメールが届く。ログは Artifacts の daily-logs に残る
+# 定時実行は既定ブランチ(main)にあるこのファイルだけが動く。GitHub 側の都合で数十分遅れることがある。
+name: daily-update
+
+on:
+  schedule:
+    - cron: "17 8 * * 1-5"   # 17:17 JST 月〜金
+    - cron: "43 22 * * *"    # 7:43 JST 毎日
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "最新でも取り直す(取引時間中は動かない)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: daily-update
+  cancel-in-progress: false
+
+env:
+  TZ: Asia/Tokyo
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 更新が必要か
+        id: need
+        shell: pwsh
+        run: ./ps/Test-NeedsUpdate.ps1 -Force:$${{ inputs.force == true }}
+
+      - name: 株価データを展開する
+        if: steps.need.outputs.needed == 'true'
+        run: |
+          mkdir -p data/raw/stocks/prime_since2000
+          for z in data/prices_zip/*.zip; do unzip -q -o "$z" -d data/raw/stocks/prime_since2000; done
+          ls data/raw/stocks/prime_since2000 | wc -l
+
+      - name: 日次更新(株価の取得〜カレンダー・台帳)
+        if: steps.need.outputs.needed == 'true'
+        shell: pwsh
+        run: ./ps/Invoke-DailyUpdate.ps1 -Force
+
+      - name: 取得の確認
+        if: steps.need.outputs.needed == 'true'
+        shell: pwsh
+        run: ./ps/Test-DailyUpdate.ps1 -NoRepair -AsOf ${{ steps.need.outputs.target }}
+
+      - name: commit して push
+        if: steps.need.outputs.needed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add FORWARD_TEST_RESULTS.md data/processed data/raw/market reports web
+          if git diff --cached --quiet; then echo "変更なし"; exit 0; fi
+          git commit -q -m "${{ steps.need.outputs.target }} までのデータに更新(自動実行)"
+          for i in 1 2 3; do git pull -q --rebase origin "$GITHUB_REF_NAME" && git push -q origin "HEAD:$GITHUB_REF_NAME" && exit 0; sleep 10; done
+          exit 1
+
+      - name: ログを残す
+        if: always() && steps.need.outputs.needed == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: daily-logs
+          path: logs/
+          retention-days: 30
