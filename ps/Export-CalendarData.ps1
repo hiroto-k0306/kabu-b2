@@ -15,13 +15,6 @@ param(
 $ErrorActionPreference = "Stop"
 . "$PSScriptRoot\Common.ps1"
 
-function ConvertTo-JsonNumber {
-    # 整数値の double は long にして返す(JSON に .0 を付けないため)
-    param([double]$Value)
-    if ($Value -eq [Math]::Floor($Value) -and [Math]::Abs($Value) -lt 1e15) { return [long]$Value }
-    return $Value
-}
-
 Set-Location (Get-ProjectRoot)
 
 # key, 出力ディレクトリ, シナリオ名, 表示名。順序が calendar.html のタブ順になる

@@ -64,8 +64,8 @@ function Build-List {
         $lock = $x.close + (Get-LimitWidth -Base $x.close)
         $sh = [int][Math]::Floor($per / $lock)
         [PSCustomObject]@{ code = $x.code; name = $x.name; sector = $x.sector
-            close = [math]::Round($x.close, 1); lock = [math]::Round($lock, 1); shares = $sh
-            amount = [math]::Round($sh * $x.close); budget = [math]::Round($per) }
+            close = (ConvertTo-JsonNumber ([math]::Round($x.close, 1))); lock = (ConvertTo-JsonNumber ([math]::Round($lock, 1))); shares = $sh
+            amount = [long][math]::Round($sh * $x.close); budget = [long][math]::Round($per) }
     }
 }
 
@@ -91,13 +91,13 @@ foreach ($k in $strategies.Keys) {
 
 $buyDay = Get-NextTradingDay -Date $asOf
 $sellDay = Get-NextTradingDay -Date $buyDay.ToString("yyyy-MM-dd")
-$holdDays = ($sellDay - $buyDay).TotalDays
+$holdDays = [int]($sellDay - $buyDay).TotalDays
 Write-Host ""
 Write-Host ("買い: {0} 10:30〜14:00 に成行 → 当日15:30の終値で約定" -f (Format-Day $buyDay))
 Write-Host ("売り: {0} 14:00 〜 {1} 7:00 に成行 → {1} 9:00の始値で約定（保有 {2} 日）" -f (Format-Day $buyDay), (Format-Day $sellDay), $holdDays)
 
 $json = [PSCustomObject]@{
-    asOf = $asOf; budget = $Budget; generatedAt = (Get-Date).ToString("yyyy-MM-dd HH:mm")
+    asOf = $asOf; budget = (ConvertTo-JsonNumber $Budget); generatedAt = (Get-Date).ToString("yyyy-MM-dd HH:mm")
     buyDate = $buyDay.ToString("yyyy-MM-dd"); buyDateLabel = (Format-Day $buyDay)
     sellDate = $sellDay.ToString("yyyy-MM-dd"); sellDateLabel = (Format-Day $sellDay)
     holdDays = $holdDays

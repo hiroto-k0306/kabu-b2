@@ -213,5 +213,6 @@ if ($days.Count -eq 0) {
     $md.Add("- 建玉の内訳は ``reports/forward_test/trades.csv``。")
 }
 $mdPath = Resolve-ProjectPath $SummaryMd
-[IO.File]::WriteAllText($mdPath, (($md -join "`r`n") + "`r`n"), (New-Object Text.UTF8Encoding $false))
+# 改行は LF。CRLF で書くと、改行を変換しない環境(GitHub Actions)から commit したときに全行が変わったことになる
+[IO.File]::WriteAllText($mdPath, (($md -join "`n") + "`n"), (New-Object Text.UTF8Encoding $false))
 Write-Host "saved $SummaryMd"
