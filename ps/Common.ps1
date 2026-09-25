@@ -290,6 +290,14 @@ function Get-PowerShellExe {
     (Get-Process -Id $PID).Path
 }
 
+function ConvertTo-JsonNumber {
+    # 整数値の double は long にして返す。PowerShell 7 の ConvertTo-Json は double の 500000 を
+    # 500000.0 と書くので、Windows PowerShell 5.1 と同じ出力にするために使う
+    param([double]$Value)
+    if ($Value -eq [Math]::Floor($Value) -and [Math]::Abs($Value) -lt 1e15) { return [long]$Value }
+    return $Value
+}
+
 function Resolve-ProjectPath {
     param([Parameter(Mandatory)][string]$RelativePath)
     $full = Join-Path (Get-ProjectRoot) $RelativePath

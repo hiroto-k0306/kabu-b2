@@ -29,13 +29,15 @@ concurrency:
 
 env:
   TZ: Asia/Tokyo
+  # 数値や日付の書式を Windows(日本語環境)とそろえる。無いと 66.7% が 66.7 % になる
+  LANG: ja_JP.UTF-8
 
 jobs:
   update:
     runs-on: ubuntu-latest
     timeout-minutes: 240
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: 更新が必要か
         id: need
@@ -72,7 +74,7 @@ jobs:
 
       - name: ログを残す
         if: always() && steps.need.outputs.needed == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: daily-logs
           path: logs/
