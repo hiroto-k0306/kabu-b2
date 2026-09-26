@@ -1,0 +1,18 @@
+﻿{
+  "universe": { "csv": "data/raw/universe/prime.csv", "topNPopular": 10 },
+  "data": { "dailyRankingCsv": "data/processed/b3l/daily_picks.csv" },
+  "skabu": {
+    "tickerDir": "data/raw/stocks/prime_since2000",
+    "priceFromDate": "2023-01-01",
+    "startDate": "2024-01-01",
+    "outputDir": "reports/b3l_vol/top10",
+    "costBpsList": [3],
+    "taxRate": 0.20315,
+    "scenarios": [
+      { "name": "flat", "mode": "close_to_open_lag1", "accountCash": 500000, "dailyBudget": 500000, "compound": true, "budgetRatio": 1 },
+      { "name": "flat_matched", "mode": "close_to_open_lag1", "accountCash": 500000, "dailyBudget": 500000, "compound": true, "budgetRatio": 0.848 },
+      { "name": "volsized", "mode": "close_to_open_lag1", "accountCash": 500000, "dailyBudget": 500000, "compound": true, "budgetRatio": 1,
+        "volSizing": { "csv": "data/processed/vol/nikkei_vol_forecast.csv", "minScale": 0.5, "maxScale": 1.5, "warmupDays": 60, "medianWindowDays": 250, "onMissing": "one" } }
+    ]
+  }
+}

@@ -5,6 +5,7 @@ data/raw/stocks/
 # シミュレーションと信号検証の中間出力。ps\Update-B3L2026.ps1 で作り直せる。
 # reports/b3l_2026/calendar_data.json だけは配布物なので追跡する。
 reports/b3l_2026/*/
+reports/b3l_vol/*/
 reports/cross_section/
 reports/prime/
 reports/nikkei_pit/

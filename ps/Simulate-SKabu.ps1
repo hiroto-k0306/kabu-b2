@@ -200,6 +200,25 @@ function Invoke-SKabuSimulation {
     if ($null -ne $Scenario.budgetRatio) { $budgetRatio = [double]$Scenario.budgetRatio }
     if ($compound) { $dailyBudget = $account * $budgetRatio }
     $cost = $CostBps / 10000.0
+
+    # --- 変動率でその日の買付額を増減させる(任意) ---
+    # 別プロジェクト(kabu)の予測σを使い、倍率 = 目安σ ÷ 予測σ でその日の上限を動かす。
+    # 目安σは「その日までに分かっている予測σの中央値」(先読みしない)。倍率の平均は
+    # おおむね1になるので、平均的な張りは変えずに日ごとの配分だけを変える。
+    $volCfg = $Scenario.volSizing
+    $volSigma = $null
+    if ($null -ne $volCfg) {
+        if ($mode -ne "close_to_open_lag1") { throw "volSizing は close_to_open_lag1 のみ対応(指定されたのは $mode)" }
+        $volCsv = Resolve-ProjectPath ([string]$volCfg.csv)
+        if (-not (Test-Path $volCsv)) { throw "volSizing の csv がない: $($volCfg.csv)。先に ps\Import-VolatilityForecast.ps1 を実行する" }
+        $volSigma = New-Object 'System.Collections.Generic.Dictionary[string,double]'
+        foreach ($r in (Import-Csv -Path $volCsv -Encoding UTF8)) {
+            $s = 0.0
+            if ([double]::TryParse([string]$r.pred_sigma_pct, [ref]$s) -and $s -gt 0) { $volSigma[[string]$r.target_date] = $s }
+        }
+        if ($volSigma.Count -eq 0) { throw "volSizing の csv に使える予測がない" }
+    }
+
     $fillMode = "value"
     if ($Scenario.fillOrder) { $fillMode = [string]$Scenario.fillOrder }
 
@@ -210,6 +229,57 @@ function Invoke-SKabuSimulation {
     $daily = New-Object System.Collections.Generic.List[object]
     $yearly = New-Object System.Collections.Generic.List[object]
     $orders = New-Object System.Collections.Generic.List[object]
+    # 日ごとの買付倍率。カレンダー順に進みながら、その日までの予測σだけで中央値を取る
+    $volScale = $null
+    $volScaleUsed = New-Object System.Collections.Generic.List[double]
+    if ($null -ne $volCfg) {
+        # medianWindowDays: 目安σを取る窓。0 なら累積(全期間)。既定250日。
+        # 累積にすると変動率が上がっていく局面で目安が遅れ、倍率の平均が1を割る。
+        $minScale = 0.5; $maxScale = 1.5; $warmup = 60; $onMissing = "one"; $fixedTarget = 0.0; $medWindow = 250; $normalize = $true
+        if ($null -ne $volCfg.minScale)       { $minScale = [double]$volCfg.minScale }
+        if ($null -ne $volCfg.maxScale)       { $maxScale = [double]$volCfg.maxScale }
+        if ($null -ne $volCfg.warmupDays)     { $warmup = [int]$volCfg.warmupDays }
+        if ($null -ne $volCfg.onMissing)      { $onMissing = [string]$volCfg.onMissing }
+        if ($null -ne $volCfg.targetSigmaPct)   { $fixedTarget = [double]$volCfg.targetSigmaPct }
+        if ($null -ne $volCfg.medianWindowDays) { $medWindow = [int]$volCfg.medianWindowDays }
+        # σの分布は右に偏るので、倍率をそのまま使うと平均が1を割り、張りが細くなる。
+        # 過去の倍率の平均で割って平均1にそろえる(未来は見ない)。切り上げ・切り下げは
+        # 割る前の生の比に対して効かせるので、正規化後はわずかに上限を超えうる。
+        if ($null -ne $volCfg.normalizeMean)    { $normalize = [bool]$volCfg.normalizeMean }
+        $volScale = New-Object 'System.Collections.Generic.Dictionary[string,double]'
+        $hist = New-Object System.Collections.Generic.List[double]
+        $rawSum = 0.0; $rawN = 0
+        foreach ($cd in $calendar) {
+            $s = 0.0
+            if ($volSigma.ContainsKey($cd)) { $s = $volSigma[$cd] }
+            if ($s -gt 0) { $hist.Add($s) }   # この予測は前営業日16:00に分かっているので使ってよい
+            $scale = 1.0
+            if ($s -le 0) {
+                if ($onMissing -eq "skip") { $scale = 0.0 }
+            } elseif ($fixedTarget -gt 0) {
+                $scale = $fixedTarget / $s
+            } elseif ($hist.Count -ge $warmup) {
+                $win = $hist
+                if ($medWindow -gt 0 -and $hist.Count -gt $medWindow) {
+                    $win = $hist.GetRange($hist.Count - $medWindow, $medWindow)
+                }
+                $srt = @($win | Sort-Object)
+                $scale = $srt[[int][Math]::Floor($srt.Count / 2)] / $s
+            }
+            if ($scale -gt 0) {
+                if ($scale -lt $minScale) { $scale = $minScale }
+                if ($scale -gt $maxScale) { $scale = $maxScale }
+            }
+            if ($normalize -and $scale -gt 0) {
+                $rawSum += $scale
+                $rawN++
+                $m = $rawSum / $rawN
+                if ($m -gt 0) { $scale = $scale / $m }
+            }
+            $volScale[$cd] = $scale
+        }
+    }
+
     $trades = New-Object System.Collections.Generic.List[object]
     $zeroByCode = @{}
 
@@ -302,6 +372,12 @@ function Invoke-SKabuSimulation {
                 $available = $cash - $reserved
                 $budgetCap = $dailyBudget
                 if ($compound) { $budgetCap = $budgetRatio * ($cash + (Get-PositionsValue -Positions $positions -Date $t)) }
+                if ($null -ne $volScale -and $volScale.ContainsKey($date)) {
+                    # 買付日 $date を対象とする予測(作られたのは前営業日16:00)で上限を動かす
+                    $sc = $volScale[$date]
+                    $budgetCap = $budgetCap * $sc
+                    $volScaleUsed.Add($sc)
+                }
                 $budget = [Math]::Min($budgetCap, $available)
                 $bases = [double[]]::new($codes.Length)
                 $locks = [double[]]::new($codes.Length)
@@ -496,6 +572,10 @@ function Invoke-SKabuSimulation {
         ideal_pnl_pretax = $idealTotal
         yearly          = $yearly
         daily           = $daily
+        vol_scale_days  = $volScaleUsed.Count
+        vol_scale_mean   = $(if ($volScaleUsed.Count -gt 0) { ($volScaleUsed | Measure-Object -Average).Average } else { [double]::NaN })
+        vol_scale_min    = $(if ($volScaleUsed.Count -gt 0) { ($volScaleUsed | Measure-Object -Minimum).Minimum } else { [double]::NaN })
+        vol_scale_max    = $(if ($volScaleUsed.Count -gt 0) { ($volScaleUsed | Measure-Object -Maximum).Maximum } else { [double]::NaN })
         zero_by_code    = $zeroByCode
         orders          = $orders
         trades          = $trades
@@ -518,7 +598,7 @@ foreach ($sc in $sk.scenarios) {
     }
 }
 
-$summary = $results | Select-Object scenario, mode, cost_bps, account, daily_budget, compound, budget_ratio, from, to, final_equity_aftertax, pnl_pretax, tax, pnl_aftertax, cagr_aftertax, max_drawdown, max_drawdown_yen, trade_days, avg_invested, avg_stocks_bought, hedge_days, avg_hedge_amount, zero_share_ratio, skipped_at_limit, skipped_no_data, sells_delayed, ideal_pnl_pretax
+$summary = $results | Select-Object scenario, mode, cost_bps, account, daily_budget, compound, budget_ratio, vol_scale_days, vol_scale_mean, vol_scale_min, vol_scale_max, from, to, final_equity_aftertax, pnl_pretax, tax, pnl_aftertax, cagr_aftertax, max_drawdown, max_drawdown_yen, trade_days, avg_invested, avg_stocks_bought, hedge_days, avg_hedge_amount, zero_share_ratio, skipped_at_limit, skipped_no_data, sells_delayed, ideal_pnl_pretax
 $summary | Export-Csv -Path (Join-Path $outDir "summary.csv") -NoTypeInformation -Encoding UTF8
 $yearRows = foreach ($r in $results) { foreach ($y in $r.yearly) { $y | Select-Object @{N = "scenario"; E = { $r.scenario } }, @{N = "cost_bps"; E = { $r.cost_bps } }, * } }
 $yearRows | Export-Csv -Path (Join-Path $outDir "summary_by_year.csv") -NoTypeInformation -Encoding UTF8

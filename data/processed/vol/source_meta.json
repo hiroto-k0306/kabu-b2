@@ -1,0 +1,19 @@
+{
+    "imported_at":  "2026-09-26 18:54:55",
+    "kabu_root":  "C:\\Users\\ahwri\\Desktop\\AIwork\\kabu",
+    "rows":  666,
+    "target_from":  "2024-01-04",
+    "target_to":  "2026-09-28",
+    "median_sigma_pct":  0.86202580617456315,
+    "missing_trading_days":  0,
+    "sources":  {
+                    "holdout":  {
+                                    "path":  "reports/nikkei_volatility_predictions.csv",
+                                    "sha256":  "2c5a43d149b2e627b60c6859d27206f5d0ce641981ebf6b0af2825d427e47012"
+                                },
+                    "paper":  {
+                                  "path":  "reports/paper/evaluation.csv",
+                                  "sha256":  "1392f7cfdba04da7852d42204e4f69774d98cae12b4d341a235748b2d03a1a18"
+                              }
+                }
+}
