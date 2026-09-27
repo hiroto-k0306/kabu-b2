@@ -77,7 +77,7 @@ if ($rows.Count -eq 0) { throw "取り込める予測が1件もない" }
 $sorted = @($rows.Values | Sort-Object target_date)
 $outPath = Resolve-ProjectPath $OutCsv
 New-Item -ItemType Directory -Force (Split-Path $outPath -Parent) | Out-Null
-$sorted | Export-Csv -Path $outPath -NoTypeInformation -Encoding UTF8
+$sorted | Export-CsvNoBom -Path $outPath
 
 # 営業日カレンダー(N225)と突き合わせて、抜けと余りを知らせる
 $cal = New-Object System.Collections.Generic.HashSet[string]

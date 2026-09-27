@@ -35,7 +35,7 @@ foreach ($u in $universe) {
         continue
     }
     $tmp = "$path.tmp"
-    $rows | Export-Csv -Path $tmp -NoTypeInformation -Encoding UTF8
+    $rows | Export-CsvNoBom -Path $tmp
     Move-Item -Path $tmp -Destination $path -Force
     $fetched++
     if ($i % 50 -eq 0) { Write-Host ("[{0}/{1}] fetched {2}, skipped {3}, failed {4}, elapsed {5}" -f $i, $universe.Count, $fetched, $skipped, $failed.Count, $sw.Elapsed) }

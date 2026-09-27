@@ -425,7 +425,7 @@ foreach ($g in ($predSorted | Group-Object gap_days | Sort-Object { [int]$_.Name
     Write-Host ("    {0}日  {1,4}件  実現 {2,8:N4}  予測 {3,8:N4}" -f $g.Name, $g.Count, $rr, $pp)
 }
 
-$all | Export-Csv -Path (Join-Path $outDirFull "dataset.csv") -NoTypeInformation -Encoding UTF8
-$predSorted | Export-Csv -Path (Join-Path $outDirFull "predictions.csv") -NoTypeInformation -Encoding UTF8
+$all | Export-CsvNoBom -Path (Join-Path $outDirFull "dataset.csv")
+$predSorted | Export-CsvNoBom -Path (Join-Path $outDirFull "predictions.csv")
 Write-Host ""
 Write-Host "saved $OutDir/dataset.csv, predictions.csv, model_*.json"

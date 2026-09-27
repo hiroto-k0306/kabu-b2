@@ -1,4 +1,4 @@
-﻿"forecast_date","target_date","sell_date","model_year","pred_raw_pct2","pred_variance_pct2","pred_sigma_pct","realized_variance_pct2","realized_ret_pct","gap_days","source","recal_adj"
+"forecast_date","target_date","sell_date","model_year","pred_raw_pct2","pred_variance_pct2","pred_sigma_pct","realized_variance_pct2","realized_ret_pct","gap_days","source","recal_adj"
 "2023-12-29","2024-01-04","2024-01-05","2024","0.145147934862204","0.145147934862204","0.380982853764055","0.0505869028247455","0.224915323677035","1","overnight_har","1"
 "2024-01-04","2024-01-05","2024-01-09","2024","0.17977575863413","0.17977575863413","0.423999715370341","0.114256113637645","0.338017919107323","4","overnight_har","1"
 "2024-01-05","2024-01-09","2024-01-10","2024","0.119430932582517","0.119430932582517","0.345587807340649","0.0133216587306487","0.115419490254673","1","overnight_har","1"

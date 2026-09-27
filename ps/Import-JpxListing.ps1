@@ -85,7 +85,7 @@ for ($i = 1; $i -lt $rows.Count; $i++) {
 }
 
 $outFull = Resolve-ProjectPath $OutCsv
-$out | Export-Csv -Path $outFull -NoTypeInformation -Encoding UTF8
+$out | Export-CsvNoBom -Path $outFull
 Write-Host "market counts:"
 $marketCounts.GetEnumerator() | Sort-Object Value -Descending | ForEach-Object { Write-Host ("  {0,-24} {1,5}" -f $_.Key, $_.Value) }
 Write-Host "saved $($out.Count) rows ($Market) to $outFull"

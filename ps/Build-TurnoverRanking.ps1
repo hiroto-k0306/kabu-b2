@@ -95,5 +95,5 @@ foreach ($date in ($top.Keys | Sort-Object)) {
     }
 }
 $outPath = Resolve-ProjectPath $config.data.dailyRankingCsv
-$out | Export-Csv -Path $outPath -NoTypeInformation -Encoding UTF8
+$out | Export-CsvNoBom -Path $outPath
 Write-Host ("saved {0} rows ({1} days) to {2}. tickers used {3}, missing files {4}, elapsed {5}" -f $out.Count, $top.Count, $outPath, $used, $missing, $sw.Elapsed)

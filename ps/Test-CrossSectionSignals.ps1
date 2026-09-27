@@ -45,7 +45,7 @@ $flat = foreach ($r in $rows) {
     foreach ($n in $useNames) { $k = [Array]::IndexOf($names, $n); $o[$n] = $r.Signal[$k]; $o["picks_$n"] = $r.Picks[$k] }
     [PSCustomObject]$o
 }
-$flat | Export-Csv -Path (Join-Path $outDir "daily_${Phase}_minprice$MinRawPrice.csv") -NoTypeInformation -Encoding UTF8
+$flat | Export-CsvNoBom -Path (Join-Path $outDir "daily_${Phase}_minprice$MinRawPrice.csv")
 
 function Get-Regression {
     param([object[]]$Rows, [string]$Y, [string]$X)

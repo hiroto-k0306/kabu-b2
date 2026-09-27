@@ -237,6 +237,30 @@ $script:MinOvernightRatio = 0.4
 $script:MaxOvernightRatio = 2.5
 $script:MaxDateGapDays = 30
 
+function Export-CsvNoBom {
+    <#
+        CSVを UTF-8(BOM無し)で書く。
+        Export-Csv の -Encoding UTF8 は PowerShell 5.1 だとBOMが付き、7だと付かない。
+        日次更新は GitHub Actions(PowerShell 7)が書くので、そちらにそろえてBOM無しにする。
+        そうしないと手元で動かすたびにヘッダ行だけが変わった差分が出る。
+        書式や引用符の付き方は版ごとの Export-Csv に任せ、BOMだけ取り除く。
+        改行は Export-Csv が版・OSに関わらず CRLF を使うのでそのまま。
+    #>
+    param(
+        [Parameter(Mandatory, ValueFromPipeline)][AllowNull()]$InputObject,
+        [Parameter(Mandatory)][string]$Path
+    )
+    begin { $buf = New-Object System.Collections.Generic.List[object] }
+    process { if ($null -ne $InputObject) { $buf.Add($InputObject) } }
+    end {
+        $buf | Export-Csv -Path $Path -NoTypeInformation -Encoding UTF8
+        $bytes = [IO.File]::ReadAllBytes($Path)
+        if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
+            [IO.File]::WriteAllBytes($Path, $bytes[3..($bytes.Length - 1)])
+        }
+    }
+}
+
 function Test-PriceRowValid {
     param([double]$Open, [double]$Close, [double]$RawClose, [double]$Volume = 1.0)
     if (-not ($Open -gt 0) -or -not ($Close -gt 0)) { return $false }

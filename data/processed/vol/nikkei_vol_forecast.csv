@@ -1,4 +1,4 @@
-﻿"target_date","forecast_date","pred_sigma_pct","pred_variance_pct2","source"
+"target_date","forecast_date","pred_sigma_pct","pred_variance_pct2","source"
 "2024-01-04","2023-12-29","0.583844016182237","0.340873835231804","holdout"
 "2024-01-05","2024-01-04","0.684482500247059","0.468516293144465","holdout"
 "2024-01-09","2024-01-05","0.693754296791039","0.481295024316029","holdout"

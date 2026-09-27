@@ -592,16 +592,16 @@ foreach ($sc in $sk.scenarios) {
         Write-Host "  done in $($sw.Elapsed)"
         $results.Add($res)
         $tag = "$($sc.name)_cost$c"
-        $res.daily | Export-Csv -Path (Join-Path $outDir "daily_$tag.csv") -NoTypeInformation -Encoding UTF8
-        $res.orders | Export-Csv -Path (Join-Path $outDir "orders_$tag.csv") -NoTypeInformation -Encoding UTF8
-        $res.trades | Export-Csv -Path (Join-Path $outDir "trades_$tag.csv") -NoTypeInformation -Encoding UTF8
+        $res.daily | Export-CsvNoBom -Path (Join-Path $outDir "daily_$tag.csv")
+        $res.orders | Export-CsvNoBom -Path (Join-Path $outDir "orders_$tag.csv")
+        $res.trades | Export-CsvNoBom -Path (Join-Path $outDir "trades_$tag.csv")
     }
 }
 
 $summary = $results | Select-Object scenario, mode, cost_bps, account, daily_budget, compound, budget_ratio, vol_scale_days, vol_scale_mean, vol_scale_min, vol_scale_max, from, to, final_equity_aftertax, pnl_pretax, tax, pnl_aftertax, cagr_aftertax, max_drawdown, max_drawdown_yen, trade_days, avg_invested, avg_stocks_bought, hedge_days, avg_hedge_amount, zero_share_ratio, skipped_at_limit, skipped_no_data, sells_delayed, ideal_pnl_pretax
-$summary | Export-Csv -Path (Join-Path $outDir "summary.csv") -NoTypeInformation -Encoding UTF8
+$summary | Export-CsvNoBom -Path (Join-Path $outDir "summary.csv")
 $yearRows = foreach ($r in $results) { foreach ($y in $r.yearly) { $y | Select-Object @{N = "scenario"; E = { $r.scenario } }, @{N = "cost_bps"; E = { $r.cost_bps } }, * } }
-$yearRows | Export-Csv -Path (Join-Path $outDir "summary_by_year.csv") -NoTypeInformation -Encoding UTF8
+$yearRows | Export-CsvNoBom -Path (Join-Path $outDir "summary_by_year.csv")
 
 $universe = Import-Csv -Path (Resolve-ProjectPath $config.universe.csv) -Encoding UTF8
 $nameByCode = @{}

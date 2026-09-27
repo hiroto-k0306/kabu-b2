@@ -40,7 +40,7 @@ New-Item -ItemType Directory -Force $outDirFull | Out-Null
 function Export-Picks {
     param([string]$Name, [object[]]$Rows)
     $path = Join-Path $outDirFull $Name
-    $Rows | Export-Csv -Path $path -NoTypeInformation -Encoding UTF8
+    $Rows | Export-CsvNoBom -Path $path
     $days = ($Rows | Select-Object -ExpandProperty date -Unique).Count
     Write-Host ("{0,-18} {1,6} rows / {2,5} days  {3} .. {4}" -f $Name, $Rows.Count, $days, $Rows[0].date, $Rows[-1].date)
 }

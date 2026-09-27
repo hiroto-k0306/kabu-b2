@@ -47,7 +47,7 @@ foreach ($tg in $targets) {
             })
     }
     $path = Join-Path $outDir "$($tg.name).csv"
-    $rows | Export-Csv -Path $path -NoTypeInformation -Encoding UTF8
+    $rows | Export-CsvNoBom -Path $path
     Write-Host ("{0,-7} {1,5} rows  {2} - {3}  (UTC time of first/last bar: {4} / {5})" -f $tg.name, $rows.Count, $rows[0].date, $rows[-1].date, $rows[0].utc_time, $rows[-1].utc_time)
     Start-Sleep -Milliseconds 500
 }

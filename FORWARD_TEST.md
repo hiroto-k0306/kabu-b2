@@ -143,6 +143,16 @@ powershell -File ps\Update-ForwardTest.ps1 -Rebuild     # 台帳ごと作り直�
 
 ## 注意
 
+### 文字コードと改行の決まり
+
+- `.ps1` は UTF-8（BOM付き）。PowerShell 5.1 が日本語のコメントを読めなくなる。
+- **CSV は UTF-8（BOM無し）。** `Export-Csv -Encoding UTF8` は PowerShell 5.1 だとBOMが付き、
+  7だと付かない。日次更新は Actions（7）が書くのでそちらにそろえる。書き出しは
+  `Common.ps1` の `Export-CsvNoBom` を使う（`Export-Csv` を直接呼ばない）。
+  改行は `Export-Csv` が版・OSに関わらず CRLF なのでそのまま。
+- `FORWARD_TEST_RESULTS.md` は LF・BOM無し。CRLF だと Actions のコミットで全行が変わる。
+
+
 - 株価データは**2022年1月以降**。B2は250営業日の助走が必要なので、このデータで計算できるのは2023年以降。
 - 現在プライムに上場している銘柄だけのデータなので、生存者バイアスがある。
 - 表示・計算はすべて過去データのシミュレーション。投資判断の助言ではない。

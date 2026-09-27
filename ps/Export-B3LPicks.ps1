@@ -35,7 +35,7 @@ foreach ($name in $targets.Keys) {
         }
     }
     $path = Join-Path $outDirFull $name
-    $out | Export-Csv -Path $path -NoTypeInformation -Encoding UTF8
+    $out | Export-CsvNoBom -Path $path
     $days = ($out | Select-Object -ExpandProperty date -Unique).Count
     Write-Host ("{0,-22} {1,6} rows / {2,5} days  {3} .. {4}" -f $name, $out.Count, $days, $out[0].date, $out[-1].date)
 }

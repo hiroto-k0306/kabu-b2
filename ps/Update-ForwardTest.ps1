@@ -147,8 +147,8 @@ foreach ($v in $variants) {
 
 $dailySorted  = @($dailyRows | Sort-Object buy_date, variant)
 $tradesSorted = @($tradeRows | Sort-Object buy_date, variant, @{ Expression = { -[double]$_.pnl } })
-$dailySorted  | Export-Csv -Path $dailyPath  -NoTypeInformation -Encoding UTF8
-$tradesSorted | Export-Csv -Path $tradesPath -NoTypeInformation -Encoding UTF8
+$dailySorted  | Export-CsvNoBom -Path $dailyPath
+$tradesSorted | Export-CsvNoBom -Path $tradesPath
 $added = $dailySorted.Count - $before
 Write-Host ("台帳: {0}行 (今回追加 {1}行) / 建玉 {2}行" -f $dailySorted.Count, $added, $tradesSorted.Count)
 
