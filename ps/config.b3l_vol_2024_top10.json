@@ -72,6 +72,40 @@
           "normalizeMean": true,
           "onMissing": "one"
         }
+      },
+      {
+        "mode": "close_to_open_lag1",
+        "accountCash": 500000,
+        "dailyBudget": 500000,
+        "compound": true,
+        "name": "on_volsized",
+        "budgetRatio": 1,
+        "volSizing": {
+          "csv": "reports/overnight_vol/predictions.csv",
+          "minScale": 0.5,
+          "warmupDays": 60,
+          "medianWindowDays": 250,
+          "normalizeMean": true,
+          "onMissing": "one",
+          "maxScale": 1.5
+        }
+      },
+      {
+        "mode": "close_to_open_lag1",
+        "accountCash": 500000,
+        "dailyBudget": 500000,
+        "compound": true,
+        "name": "on_volsized_080",
+        "budgetRatio": 0.8,
+        "volSizing": {
+          "csv": "reports/overnight_vol/predictions.csv",
+          "minScale": 0.5,
+          "warmupDays": 60,
+          "medianWindowDays": 250,
+          "normalizeMean": true,
+          "onMissing": "one",
+          "maxScale": 1.25
+        }
       }
     ]
   }
