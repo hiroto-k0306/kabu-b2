@@ -43,6 +43,11 @@ foreach ($c in @("top3", "top5", "top10", "nk10", "prime10", "mix55")) {
     Invoke-Step -Title "シミュレーション $c" -Script "Simulate-SKabu.ps1" -Config "ps/config.b3l_2026_$c.json"
 }
 
+# 4-2. 窓の大きさの予測と、それで買付額を調整した系統
+#      未評価データでの判定用。カレンダーには出さず、未知データの台帳にだけ足す。
+Invoke-Step -Title "窓の大きさの予測" -Script "Build-OvernightVolModel.ps1" -Config "ps/config.overnight_vol.json"
+Invoke-Step -Title "シミュレーション top10vol" -Script "Simulate-SKabu.ps1" -Config "ps/config.b3l_2026_top10vol.json"
+
 # 5. カレンダー用データ と 翌営業日の銘柄
 Invoke-Step -Title "calendar_data.json の作成" -Script "Export-CalendarData.ps1"
 Invoke-Step -Title "翌営業日に買う銘柄" -Script "Get-TodayPicks.ps1" -ScriptArgs @("-Budget", "$Budget")

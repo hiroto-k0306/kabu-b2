@@ -33,6 +33,10 @@ $variants = @(
     @{ key = "nk10";    dir = "nk10";    scenario = "nk10_compound";    label = "日経225 上位10" }
     @{ key = "prime10"; dir = "prime10"; scenario = "prime10_compound"; label = "プライム 上位10" }
     @{ key = "mix55";   dir = "mix55";   scenario = "mix55_compound";   label = "日経225上位5＋B2上位5" }
+    # 窓の大きさで買付額を調整する系統。start はこの系統だけの開始日。
+    # 窓モデルの設計(説明変数の選択・予測開始年)は2026-09-24買いまでの結果を見て決めたので、
+    # それ以前を混ぜると未評価データでの判定にならない。最初の未見の買付日から数える。
+    @{ key = "b2_10_vol"; dir = "top10vol"; scenario = "top10vol_compound"; label = "B2 10銘柄+窓調整"; start = "2026-09-28" }
 )
 
 $names = New-Object 'System.Collections.Generic.Dictionary[string,string]'
@@ -79,7 +83,9 @@ foreach ($v in $variants) {
     foreach ($r in (Import-Csv -Path $dailyCsv -Encoding UTF8)) { $equity[[string]$r.date] = [double]$r.equity }
 
     # 買った日ごとにまとめる
-    $rowsAll = @(Import-Csv -Path $tradesCsv -Encoding UTF8 | Where-Object { [string]::Compare([string]$_.buy_date, $StartDate) -ge 0 })
+    $vStart = $StartDate
+    if ($v.ContainsKey("start")) { $vStart = [string]$v.start }
+    $rowsAll = @(Import-Csv -Path $tradesCsv -Encoding UTF8 | Where-Object { [string]::Compare([string]$_.buy_date, $vStart) -ge 0 })
 
     foreach ($g in ($rowsAll | Group-Object buy_date | Sort-Object Name)) {
         $d  = [string]$g.Name
@@ -160,13 +166,21 @@ if ($days.Count -eq 0) {
     $md.Add("")
     $md.Add("引けで買って翌営業日の寄りで売る。数字は一度書いたら書き換えない(``reports/forward_test/daily.csv`` が元)。")
     $md.Add("")
+    $md.Add("系統によって開始日が違う。`B2 10銘柄+窓調整` は窓モデルの設計に使った期間を除くため 2026-09-28 から。")
+    $md.Add("この系統は1日の買付額を予測した窓の大きさで増減させる。詳細は ``reports/overnight_vol_20260927.md``。")
+    $md.Add("")
     $md.Add("## まとめ")
     $md.Add("")
-    $md.Add("| 買い方 | 日数 | 勝ち | 勝率 | 累計損益 | 平均/日 | 最大の勝ち | 最大の負け |")
-    $md.Add("|---|---:|---:|---:|---:|---:|---:|---:|")
+    $md.Add("| 買い方 | 開始 | 日数 | 勝ち | 勝率 | 累計損益 | 平均/日 | 最大の勝ち | 最大の負け |")
+    $md.Add("|---|---|---:|---:|---:|---:|---:|---:|---:|")
     foreach ($v in $variants) {
         $rows = @($dailySorted | Where-Object { $_.variant -eq $v.key })
-        if ($rows.Count -eq 0) { continue }
+        $vs = $(if ($v.ContainsKey("start")) { [string]$v.start } else { $StartDate })
+        if ($rows.Count -eq 0) {
+            # まだ記録が無い系統も、仕込んであることが分かるように出す
+            $md.Add("| $($v.label) | $vs | 0 | — | — | — | — | — | — |")
+            continue
+        }
         $pnls = @($rows | ForEach-Object { [int]$_.pnl })
         $wins = @($pnls | Where-Object { $_ -gt 0 }).Count
         $sum  = ($pnls | Measure-Object -Sum).Sum
@@ -175,6 +189,7 @@ if ($days.Count -eq 0) {
         $avg  = [Math]::Round($sum / $rows.Count)
         $cells = @(
             $v.label
+            $vs
             $rows.Count
             $wins
             ("{0:P1}" -f ($wins / $rows.Count))
