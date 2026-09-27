@@ -21,6 +21,13 @@ param(
     [double]$EwmaLambda = 0.94,      # 比較用EWMAの減衰
     [int]$BasketWindow = 20,         # 銘柄ごとの窓の大きさを測る日数
     [int]$MarketWindow = 22,         # 日経平均の変動率を測る日数
+    # 水準の測り直しは「予測/実現」を1に近づけるが、裾の重い目的変数ではQLIKEが悪化する。
+    # サイジングに使うだけなら倍率は規格化されるので、-NoRecal の方が予測精度は良い。
+    [switch]$NoRecal,
+    [int]$RecalWindow = 250,         # 水準を測り直す窓(直近何日の実績で補正し直すか)
+    [int]$RecalMinObs = 60,          # 測り直しに必要な最小日数
+    [double]$RecalMin = 0.5,         # 測り直しの倍率の下限
+    [double]$RecalMax = 2.0,         # 同 上限
     [string]$OutDir = "reports/overnight_vol"
 )
 
@@ -195,7 +202,9 @@ $use = @($all | Where-Object { -not [double]::IsNaN($_.rv_lag22) })
 Write-Host "ラグが揃う行 $($use.Count)日"
 
 # --- 説明変数の並び ---
-$featNames = @("lrv_d", "lrv_w", "lrv_m", "lbasket", "lnk_cc", "lnk_gap", "lgapdays")
+# 窓の暦日数は対数の連続値だと4日窓の逆転(1日窓より効率が良い)を吸収できないので区分にする。
+# 基準は1〜2日。gap3 は週末をまたぐ3日、gap4p は4日以上(連休)。
+$featNames = @("lrv_d", "lrv_w", "lrv_m", "lbasket", "lnk_cc", "lnk_gap", "gap3", "gap4p")
 function Get-FeatureVector {
     param($Row)
     return @(
@@ -205,7 +214,8 @@ function Get-FeatureVector {
         [Math]::Log($Row.basket_rms_pct)
         [Math]::Log($Row.nk_cc_pct)
         [Math]::Log($Row.nk_gap_pct)
-        [Math]::Log([double]$Row.gap_days)
+        $(if ([int]$Row.gap_days -eq 3) { 1.0 } else { 0.0 })
+        $(if ([int]$Row.gap_days -ge 4) { 1.0 } else { 0.0 })
     )
 }
 
@@ -301,6 +311,7 @@ foreach ($y in $years) {
             target_date   = $r.target_date
             sell_date     = $r.sell_date
             model_year    = $y
+            pred_raw_pct2      = $pv
             pred_variance_pct2 = $pv
             pred_sigma_pct     = [Math]::Sqrt($pv)
             realized_variance_pct2 = $r.rv_pct2
@@ -327,6 +338,35 @@ foreach ($y in $years) {
 }
 
 if ($preds.Count -eq 0) { throw "予測が1件も作れなかった" }
+
+# --- 水準の測り直し ---
+# 年に一度しか係数を直さないので、変動率の水準が動く局面で予測が遅れる(2025年は予測/実現 0.61)。
+# 直近 RecalWindow 日の「実現の合計 ÷ 予測の合計」を掛け直す。使うのはその日より前だけ。
+$predOrder = @($preds | Sort-Object target_date)
+$histR = New-Object System.Collections.Generic.List[double]
+$histP = New-Object System.Collections.Generic.List[double]
+foreach ($r in $predOrder) {
+    $adj = 1.0
+    if (-not $NoRecal -and $histR.Count -ge $RecalMinObs) {
+        $from = 0
+        if ($histR.Count -gt $RecalWindow) { $from = $histR.Count - $RecalWindow }
+        $sr = 0.0; $sp = 0.0
+        for ($i = $from; $i -lt $histR.Count; $i++) { $sr += $histR[$i]; $sp += $histP[$i] }
+        if ($sp -gt 0) {
+            $adj = $sr / $sp
+            if ($adj -lt $RecalMin) { $adj = $RecalMin }
+            if ($adj -gt $RecalMax) { $adj = $RecalMax }
+        }
+    }
+    $pv = $r.pred_raw_pct2 * $adj
+    if ($pv -lt $Floor) { $pv = $Floor }
+    $r.pred_variance_pct2 = $pv
+    $r.pred_sigma_pct = [Math]::Sqrt($pv)
+    $r | Add-Member -NotePropertyName recal_adj -NotePropertyValue $adj -Force
+    # 実績が分かってから履歴に入れる(この行の予測には使っていない)
+    $histR.Add($r.realized_variance_pct2)
+    $histP.Add($r.pred_raw_pct2)
+}
 
 # --- 比較用EWMA と 一定値 ---
 $predSorted = @($preds | Sort-Object target_date)
