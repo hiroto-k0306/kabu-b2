@@ -1,21 +1,22 @@
-# kabu-b2 への反映パッチ（B3・M0・T2 の前向き検証 と カレンダーの「放置」パターン）
+# kabu-b2 への反映パッチ（B3・M0・T2・X5 の前向き検証 と カレンダーの「放置」パターン）
 
 作成日 2026-09-30。このフォルダのファイルを、kabu-b2 のクローンの同じ場所に上書きコピーして、commit・push する。
 私（Claude）の環境には git も GitHub の認証も無いので、リポジトリへの反映（commit・push）はご自身で行う。
 
 ## 何を足したか
 
-### A. 未知データの台帳（`reports/forward_test/daily.csv`）に3系統を足す（カレンダーには出さない）
+### A. 未知データの台帳（`reports/forward_test/daily.csv`）に4系統を足す（カレンダーには出さない）
 
 | 系統 | 中身 | 開始（買い日） |
 |---|---|---|
 | `B3 10銘柄` | 低ボラの絞り込みをしない B3 の上位10銘柄 | 2026-09-24 |
 | `M0 (B3とB2の混合)` | B3 の上位10 と B2 の上位10の50:50混合（重複する銘柄は重み2、20銘柄前後） | 2026-09-24 |
 | `T2 (二段階)` | 上の約20銘柄を「直近20営業日の夜間リターン平均」で並べ替えた上位10銘柄 | 2026-09-24 |
+| `X5 (K=5・高値圏回避)` | B2 の K=5 から、判断日 t の終値が日中の高値圏（(終値−安値)÷(高値−安値) > 0.8）の銘柄を除き、次の順位で補った上位5銘柄。**比べる相手は既存の `B2 5銘柄`** | 2026-09-24 |
 
 - 開始日は、定義を 2026-09-17 までのデータで固めたため、9/18 判断（買い日は休業日をはさんで 9/24）以降。窓調整の系統（9/28開始）と同じ考え方。
 - 選定は判断日の引けまでのデータだけを使い、買い日の引けで買って翌営業日の寄りで売る（B2 と同じ）。S株シミュレーション（1株単位、値幅制限、コスト3bp、再投資）も B2 と同じ `Simulate-SKabu.ps1` で行う。
-- 定義の出どころ: 私の側の検証（kabu2 の README「変更15〜25」）。T2 の第2段は、事前に登録した「直近20営業日の夜間リターン平均」。
+- 定義の出どころ: 私の側の検証（kabu2 の README「変更15〜30」）。X5 は、B2 の負けの分析（6-27・6-29章）から見つけた「終値が高値圏の銘柄を避ける」を K=5 に当てたもの（変更29・30）。過去データ上は事前登録の基準を満たさなかったが（フィルターの効果は t=1.80）、B2 に対する優位が3期間で出たため、前向きに追跡する。T2 の第2段は、事前に登録した「直近20営業日の夜間リターン平均」。
 
 ### B. カレンダーに「放置」パターン（S&P500・オルカン）を2つ足す
 
@@ -29,16 +30,17 @@
 新規:
 - `ps/Build-TwoStagePicks.ps1` … M0（`data/processed/combo/b3_b3l_m0.csv`、weight 列つき）と T2（`data/processed/combo/t2_on20.csv`）の銘柄を作る
 - `ps/Patch-CalendarHold.ps1` … `web/calendar.html` の表示を放置パターンに対応させる（直してあれば何もしない。`const DATA`・`const TODAY` の行には触れない）
-- `ps/config.b3l_2026_b3.json` / `config.b3l_2026_m0.json` / `config.b3l_2026_t2.json` … シミュレーションの設定
+- `ps/config.b3l_2026_b3.json` / `config.b3l_2026_m0.json` / `config.b3l_2026_t2.json` / `config.b3l_2026_x5.json` … シミュレーションの設定
 
 変更:
+- `ps/CrossSectionStudy.cs` … 信号 `B3LH80` を末尾に追加（B3L の候補から、判断日 t の終値位置が 0.8 を超える銘柄を除いて次の順位で補う）。調整後の高値・安値の読み込みを足した。**既存の信号（B3L など）の値は変わらない**（作業コピーで、B2 の 3・5・10銘柄のシミュレーションの最終資産が変更の前後で一致することを確認）。信号のインデックスは末尾に足しただけなので、他のスクリプトへの影響はない
 - `ps/Fetch-MarketData.ps1` … `2558.T`・`2559.T` の日足を保存する対象に追加（3行）
 - `ps/Export-CalendarData.ps1` … 放置パターンを `calendar_data.json` の variants に追加（`kind = "hold"`）。`Repair-EtfSeries` を追加
-- `ps/Update-B3L2026.ps1` … `Test-CrossSectionSignals.ps1` に `-AlsoShow B3` を足す／B3 の picks の変換／`Build-TwoStagePicks.ps1` の呼び出し／b3・m0・t2 のシミュレーション／`Patch-CalendarHold.ps1` の呼び出し
-- `ps/Update-ForwardTest.ps1` … `$variants` に3系統を追加（各 `start = "2026-09-24"`）、読み物（`FORWARD_TEST_RESULTS.md`）に説明を追加
+- `ps/Update-B3L2026.ps1` … `Test-CrossSectionSignals.ps1` に `-AlsoShow B3,B3LH80` を足す／B3 と B3LH80 の picks の変換（`data/processed/b3`・`data/processed/b3lh`）／`Build-TwoStagePicks.ps1` の呼び出し／b3・m0・t2・x5 のシミュレーション／`Patch-CalendarHold.ps1` の呼び出し
+- `ps/Update-ForwardTest.ps1` … `$variants` に4系統を追加（各 `start = "2026-09-24"`）、読み物（`FORWARD_TEST_RESULTS.md`）に説明を追加
 - `FORWARD_TEST.md` … 新系統と放置パターンの説明を追加
 
-**触っていないもの**: `web/calendar.html` 本体（`Patch-CalendarHold.ps1` が次回の日次更新で直す。B3・M0・T2 は `Export-CalendarData.ps1` の variants に入れていないので、カレンダーには出ない）、`.github/workflows/daily-update.yml`、`Simulate-SKabu.ps1`、`Test-CrossSectionSignals.ps1`、既存の台帳の行。
+**触っていないもの**（`ps/CrossSectionStudy.cs` は上のとおり信号を1つ足しただけ）: `web/calendar.html` 本体（`Patch-CalendarHold.ps1` が次回の日次更新で直す。B3・M0・T2 は `Export-CalendarData.ps1` の variants に入れていないので、カレンダーには出ない）、`.github/workflows/daily-update.yml`、`Simulate-SKabu.ps1`、`Test-CrossSectionSignals.ps1`、既存の台帳の行。
 
 エンコーディングは元のファイルにそろえてある（`.ps1` は UTF-8 BOM付き・LF、`.md` と `.json` は BOM無し・LF）。
 
@@ -64,7 +66,7 @@ powershell -File ps\Update-ForwardTest.ps1 -OutDir reports/_tmp_forward -Summary
 
 ## 初回の GitHub Actions で起きること
 
-- 新しく commit されるもの: `data/processed/b3/*.csv`、`data/processed/combo/b3_b3l_m0.csv`・`t2_on20.csv`、`data/raw/market/2558.csv`・`2559.csv`、`reports/forward_test/*`（新3系統の 2026-09-24 以降の行）、`FORWARD_TEST_RESULTS.md`、`web/calendar.html`（表示の修正＋放置パターンのデータ）、`reports/b3l_2026/calendar_data.json`。
+- 新しく commit されるもの: `data/processed/b3/*.csv`、`data/processed/b3lh/*.csv`、`data/processed/combo/b3_b3l_m0.csv`・`t2_on20.csv`、`data/raw/market/2558.csv`・`2559.csv`、`reports/forward_test/*`（新3系統の 2026-09-24 以降の行）、`FORWARD_TEST_RESULTS.md`、`web/calendar.html`（表示の修正＋放置パターンのデータ）、`reports/b3l_2026/calendar_data.json`。
 - 新3系統の 9/24 以降の行は、パッチを反映した日の日次更新で**まとめて**足される（`recorded_at` にその日時が残る）。追記専用の台帳なので、一度書いた行は後から書き換わらない。
 - 日次更新の所要時間は、シミュレーション3本と選定の追加で数分増える程度（作業コピーでの実測: シミュレーション9本で40秒、`Build-TwoStagePicks.ps1` は約7秒（既定は 2025-12-01 以降の判断日だけを作る））。
 
@@ -74,7 +76,8 @@ powershell -File ps\Update-ForwardTest.ps1 -OutDir reports/_tmp_forward -Summary
 - `Build-TwoStagePicks.ps1` の T2 の上位10を、別の書き方で独立に再計算した結果と、最新の判断日（2026-09-15）で完全に一致。M0 の重み（重複銘柄が2、その他は1、19〜20銘柄）が `Simulate-SKabu.ps1` の weight 列として読まれ、平均買付銘柄数 19.5 になる。
 - b3・m0・t2 のシミュレーションが通り、`Update-ForwardTest.ps1`（別の出力先・開始日を前倒しにした試験）が3系統を台帳と読み物に足す。
 - `Export-CalendarData.ps1` が放置パターンを出し、`Patch-CalendarHold.ps1` を当てた `calendar.html` をブラウザで開いて、戦略ボタン・月のカレンダー・日ごとの内訳・比較表・元手/開始日の入力（開始日を変えたときの評価額は理論値と 0.03% 以内）・コンソールエラーなしを確認。
-- 参考（未知データではない、2026-01-06〜09-17 のS株シミュレーション・税引後の最終資産）: B2 10銘柄 546,116円、B3 627,212円、M0 592,265円、T2 573,245円。放置は（ETF代用、税引前、〜2026-09-29）S&P500 562,049円、オルカン 560,511円。
+- 参考（未知データではない、2026-01-06〜09-17 のS株シミュレーション・税引後の最終資産）: B2 3銘柄 521,622円、B2 5銘柄 515,966円、B2 10銘柄 546,116円、B3 627,212円、M0 592,265円、T2 573,245円、**X5 552,968円**。
+- カレンダーと同じ基準（税引前、〜2026-09-16 買い）の比較: X5 は資産 566,471円（収支 +66,473円、最大の落ち込み −4.7%、勝ち 100日 / 負け 72日）、B2 5銘柄 520,036円（−6.2%）、B2 10銘柄 557,872円（−4.4%）、B3 659,644円（−10.7%）、M0 615,787円（−6.2%）、T2 591,918円（−8.3%）、日経225 上位10 679,401円（−18.5%）、プライム 上位10 709,193円（−18.5%）、日経225上位5＋B2上位5 626,623円（−11.1%）。放置は〜09-17 の評価額（税引前）で S&P500（2558）550,410円、オルカン（2559）551,586円。放置は（ETF代用、税引前、〜2026-09-29）S&P500 562,049円、オルカン 560,511円。
 
 ## 確認していないこと
 
@@ -84,5 +87,5 @@ powershell -File ps\Update-ForwardTest.ps1 -OutDir reports/_tmp_forward -Summary
 
 ## 戻したいとき
 
-- 追加分を戻す: 適用前のファイルに戻し、`data/processed/b3/`、`data/processed/combo/b3_b3l_m0.csv`・`t2_on20.csv`、`data/raw/market/2558.csv`・`2559.csv` を削除する。台帳（`reports/forward_test/*`）に足された3系統の行は、`variant` が `b3_10`・`m0`・`t2` の行を削除して戻す（他の系統の行は触らない）。
+- 追加分を戻す: 適用前のファイルに戻し（`ps/CrossSectionStudy.cs` も）、`data/processed/b3/`、`data/processed/b3lh/`、`data/processed/combo/b3_b3l_m0.csv`・`t2_on20.csv`、`data/raw/market/2558.csv`・`2559.csv` を削除する。台帳（`reports/forward_test/*`）に足された3系統の行は、`variant` が `b3_10`・`m0`・`t2`・`x5` の行を削除して戻す（他の系統の行は触らない）。
 - `web/calendar.html` は `git checkout` で戻すか、次回の日次更新で `Patch-CalendarHold.ps1` を外した状態から `Update-Calendar.ps1` を回す。

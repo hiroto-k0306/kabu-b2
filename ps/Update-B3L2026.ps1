@@ -31,10 +31,11 @@ if (-not $SkipRanking) {
 
 # 2. B2の選定 -> data/processed/b3l/*.csv
 if (-not $SkipSignals) {
-    # -AlsoShow B3: 低ボラ条件のない B3 の上位10も同じ出力に入れる（未知データの台帳の B3・M0・T2 用）
-    Invoke-Step -Title "B2の信号と上位銘柄(TopK=10)" -Script "Test-CrossSectionSignals.ps1" -ScriptArgs @("-Phase", "Reference", "-Signal", "B3L", "-AlsoShow", "B3", "-TopK", "10")
+    # -AlsoShow B3,B3LH80: 低ボラ条件のない B3 の上位10と、B3L から高値圏の銘柄を避けた上位10も同じ出力に入れる（未知データの台帳の B3・M0・T2・X5 用）
+    Invoke-Step -Title "B2の信号と上位銘柄(TopK=10)" -Script "Test-CrossSectionSignals.ps1" -ScriptArgs @("-Phase", "Reference", "-Signal", "B3L", "-AlsoShow", "B3,B3LH80", "-TopK", "10")
     Invoke-Step -Title "picksをdate,rank,codeへ変換" -Script "Export-B3LPicks.ps1"
     Invoke-Step -Title "B3のpicksをdate,rank,codeへ変換" -Script "Export-B3LPicks.ps1" -ScriptArgs @("-Column", "picks_B3", "-OutDir", "data/processed/b3")
+    Invoke-Step -Title "B3L(高値圏を避ける)のpicksをdate,rank,codeへ変換" -Script "Export-B3LPicks.ps1" -ScriptArgs @("-Column", "picks_B3LH80", "-OutDir", "data/processed/b3lh")
 }
 
 # 3. 比較用ユニバース -> data/processed/combo/*.csv
@@ -52,8 +53,8 @@ foreach ($c in @("top3", "top5", "top10", "nk10", "prime10", "mix55")) {
 Invoke-Step -Title "窓の大きさの予測" -Script "Build-OvernightVolModel.ps1" -Config "ps/config.overnight_vol.json"
 Invoke-Step -Title "シミュレーション top10vol" -Script "Simulate-SKabu.ps1" -Config "ps/config.b3l_2026_top10vol.json"
 
-# 4-3. B3・M0・T2（カレンダーには出さず、未知データの台帳にだけ足す）
-foreach ($c in @("b3", "m0", "t2")) {
+# 4-3. B3・M0・T2・X5（X5 = B2 の K=5 で、判断日の終値が日中の高値圏の銘柄を避ける）。カレンダーには出さず、未知データの台帳にだけ足す
+foreach ($c in @("b3", "m0", "t2", "x5")) {
     Invoke-Step -Title "シミュレーション $c" -Script "Simulate-SKabu.ps1" -Config "ps/config.b3l_2026_$c.json"
 }
 

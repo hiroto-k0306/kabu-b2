@@ -45,6 +45,8 @@ $variants = @(
     @{ key = "b3_10"; dir = "b3"; scenario = "b3_compound"; label = "B3 10銘柄"; start = "2026-09-24" }
     @{ key = "m0";    dir = "m0"; scenario = "m0_compound"; label = "M0 (B3とB2の混合)"; start = "2026-09-24" }
     @{ key = "t2";    dir = "t2"; scenario = "t2_compound"; label = "T2 (二段階)"; start = "2026-09-24" }
+    #   X5    : B2 の K=5（`b2_5`）から、判断日 t の終値が日中の高値圏（(終値-安値)/(高値-安値) > 0.8）の銘柄を除き、次の順位で補った上位5銘柄。比べる相手は `b2_5`
+    @{ key = "x5";    dir = "x5"; scenario = "x5_compound"; label = "X5 (K=5・高値圏回避)"; start = "2026-09-24" }
 )
 
 $names = New-Object 'System.Collections.Generic.Dictionary[string,string]'
@@ -179,6 +181,7 @@ if ($days.Count -eq 0) {
     $md.Add("")
     $md.Add("``B3 10銘柄``・``M0``・``T2`` は B2 の改良候補で、定義を 2026-09-17 までのデータで固めたため、9/24 買い（9/18 判断）から数える。")
     $md.Add("M0 は B3 と B2 の上位10の50:50混合、T2 はその約20銘柄を直近20営業日の夜間リターン平均で並べ替えた上位10。")
+    $md.Add("``X5`` も同じく 9/24 買いから。B2 の5銘柄（``B2 5銘柄``）から、判断日の終値が日中の高値圏（位置 > 0.8）の銘柄を除いた上位5銘柄。``B2 5銘柄`` と比べる。")
     $md.Add("")
     $md.Add("## まとめ")
     $md.Add("")

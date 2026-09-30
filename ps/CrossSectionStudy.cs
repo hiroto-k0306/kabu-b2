@@ -12,7 +12,9 @@ public class CrossSectionStudy
     public const double MaxOvernightRatio = 2.5;
     public const int MaxDateGapDays = 30;
 
-    public static readonly string[] SignalNames = new string[] { "A1", "A2", "A3", "A4", "B1", "B2", "B3", "V1", "B3L", "B3VR", "B3LS" };
+    public static readonly string[] SignalNames = new string[] { "A1", "A2", "A3", "A4", "B1", "B2", "B3", "V1", "B3L", "B3VR", "B3LS", "B3LH80" };
+    // B3LH80（未知データの台帳の X5 用）: B3L の候補から、判断日 t の終値位置 (終値-安値)/(高値-安値) が 0.8 を超える銘柄（高値圏）を除き、次の順位で補う。
+    // 値幅が無い日は位置が定義できないので除かない。他の信号の値は変わらない。
     // B3VR（README 24. A1）: B3 ÷ 値動き の上位。B3LS（24. A2）: B3L の順位で同じ業種は2銘柄まで
     // SectorOf: 銘柄コード → 業種番号（B3LS で使う。null なら業種の制限なし）
     public static Dictionary<string, int> SectorOf = null;
@@ -90,6 +92,8 @@ public class CrossSectionStudy
         var codes = new string[S];
         var aO = new float[S][];
         var aC = new float[S][];
+        var aH = new float[S][];
+        var aL = new float[S][];
         var vol = new float[S][];
         var rawC = new float[S][];
         var ok = new bool[S][];
@@ -99,10 +103,10 @@ public class CrossSectionStudy
             for (int s = 0; s < S; s++)
             {
                 codes[s] = Path.GetFileNameWithoutExtension(files[s]);
-                aO[s] = new float[T]; aC[s] = new float[T]; vol[s] = new float[T]; rawC[s] = new float[T]; ok[s] = new bool[T];
+                aH[s] = new float[T]; aL[s] = new float[T]; aO[s] = new float[T]; aC[s] = new float[T]; vol[s] = new float[T]; rawC[s] = new float[T]; ok[s] = new bool[T];
                 var rowDates = new List<DateTime>();
                 var rowCal = new List<int>();
-                var ro = new List<double>(); var rc = new List<double>(); var rrc = new List<double>(); var rv = new List<double>();
+                var rhh = new List<double>(); var rll = new List<double>(); var ro = new List<double>(); var rc = new List<double>(); var rrc = new List<double>(); var rv = new List<double>();
                 header = true;
                 foreach (var line in File.ReadLines(files[s]))
                 {
@@ -113,7 +117,7 @@ public class CrossSectionStudy
                     rowDates.Add(DateTime.ParseExact(d, "yyyy-MM-dd", CultureInfo.InvariantCulture));
                     int ci;
                     rowCal.Add(calIdx.TryGetValue(d, out ci) ? ci : -1);
-                    ro.Add(ParseD(f[2])); rc.Add(ParseD(f[5])); rv.Add(ParseD(f[6])); rrc.Add(ParseD(f[10]));
+                    rhh.Add(ParseD(f[3])); rll.Add(ParseD(f[4])); ro.Add(ParseD(f[2])); rc.Add(ParseD(f[5])); rv.Add(ParseD(f[6])); rrc.Add(ParseD(f[10]));
                 }
                 // Set-InvalidPriceRows と同じ基準（出来高0の行も不正として扱う）
                 int lastValid = -1, marked = 0;
@@ -136,7 +140,7 @@ public class CrossSectionStudy
                     {
                         lastValid = i;
                         int ci = rowCal[i];
-                        if (ci >= 0) { aO[s][ci] = (float)o; aC[s][ci] = (float)c; vol[s][ci] = (float)v; rawC[s][ci] = (float)raw; ok[s][ci] = true; }
+                        if (ci >= 0) { aH[s][ci] = (float)rhh[i]; aL[s][ci] = (float)rll[i]; aO[s][ci] = (float)o; aC[s][ci] = (float)c; vol[s][ci] = (float)v; rawC[s][ci] = (float)raw; ok[s][ci] = true; }
                         continue;
                     }
                     if (isBreak) lastValid = -1;
@@ -242,7 +246,13 @@ public class CrossSectionStudy
                     int s = kv.Value;
                     if (on250.Cnt[s] >= 200 && id250.Cnt[s] >= 200)
                     {
-                        if (kv.Key <= median) { scores[8].Add(new KeyValuePair<double, int>(b3Of[s], s)); scores[10].Add(new KeyValuePair<double, int>(b3Of[s], s)); }
+                        if (kv.Key <= median)
+                        {
+                            scores[8].Add(new KeyValuePair<double, int>(b3Of[s], s)); scores[10].Add(new KeyValuePair<double, int>(b3Of[s], s));
+                            double hiv = aH[s][t], lov = aL[s][t], clv = aC[s][t];
+                            double cp = (hiv > lov) ? (clv - lov) / (hiv - lov) : double.NaN;
+                            if (double.IsNaN(cp) || cp <= 0.8) scores[11].Add(new KeyValuePair<double, int>(b3Of[s], s));
+                        }
                         if (kv.Key > 0) scores[9].Add(new KeyValuePair<double, int>(b3Of[s] / kv.Key, s));
                     }
                 }
