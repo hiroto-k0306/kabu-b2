@@ -106,6 +106,7 @@ $env:KABU_CONFIG = "ps/config.b3l.json"; powershell -File ps\Simulate-SKabu.ps1
 | `config.b3l.json` | B2 10銘柄（2022年開始） |
 | `config.b3l_top5.json` / `config.b3l_top3.json` | B2 5銘柄 / 3銘柄 |
 | `config.b3l_2026_top3/5/10.json` | B2 3/5/10銘柄（2026年開始・利益を再投資） |
+| `config.b3l_2026_b3.json` / `_m0.json` / `_t2.json` | B3 10銘柄 / M0（B3とB2の混合）/ T2（二段階）。未知データの台帳用 |
 | `config.prime_long.json` | 株価取得用（2000年以降。新しいモデルを作るとき用） |
 | `config.prime_daily.json` | 日次更新の株価取得用（2020年以降。`Invoke-DailyUpdate.ps1` が使う） |
 | `config.prime.json` / `config.nikkei_pit.json` | 売買代金ランキング作成用 |
@@ -120,6 +121,15 @@ $env:KABU_CONFIG = "ps/config.b3l.json"; powershell -File ps\Simulate-SKabu.ps1
 この置き換えは `powershell -File ps\Update-Calendar.ps1` が行う（置き換え前の版は `calendar.html.bak` に残る）。
 株価の更新からカレンダーまで一度にやるなら `powershell -File ps\Update-B3L2026.ps1`。
 
+## 4-2. カレンダーの「放置」パターン（S&P500・オルカン）
+
+カレンダーの最初の買い日（2026-01-06）の引けに元手50万円を全額投入し、その後は売買しない場合を、比較用に足してある。
+投資信託の基準価額は日足の取得先に無いので、連動する東証ETF（2558 MAXIS 米国株式(S&P500)、2559 MAXIS 全世界株式(オール・カントリー)）の分配金込みの価格で代用する（金額指定で全額投入、端数なし）。
+
+- 価格は `ps\Fetch-MarketData.ps1` が `data/raw/market/daily_since2000/2558.csv`・`2559.csv` に保存する。
+- `ps\Export-CalendarData.ps1` が `calendar_data.json` の variants に `hold_sp500`・`hold_acwi`（`kind = "hold"`）として足す。日ごとの損益は「その日の引けの評価額 → 次の営業日の引けの評価額」の値動き。
+- 取得元の東証ETFの日足には、2558・2559 の 2026-06-05 の10分割が調整されていない・6/8 だけ桁のずれた異常値がある。`Export-CalendarData.ps1` の `Repair-EtfSeries` が、1日だけの異常値を除き、分割とみなせる跳びを補正する（取得元が直したときは何もしない。補正したときは表示する）。
+- `web\calendar.html` の表示（買・売 → 前・後など）は `ps\Patch-CalendarHold.ps1` が直す。`Update-B3L2026.ps1` が毎回呼ぶ（直してあれば何もしない）。
 ## 5. 未知データでの成績を残す
 
 モデルを固めた後に出てきたデータでの成績は `FORWARD_TEST_RESULTS.md` に積み上がる。
@@ -136,6 +146,7 @@ powershell -File ps\Update-ForwardTest.ps1 -Rebuild     # 台帳ごと作り直�
   ならないため。まだ無い日付だけを足す。何度実行しても増えない。
 - 区切りは **2026-09-17に買った分から**（`-StartDate` で変えられる）。配布時点のカレンダーが
   持っていた最後の建玉が9/16買いなので、その次の営業日から先が未知データにあたる。
+- `B3 10銘柄` / `M0` / `T2` は B2 の改良候補（B3 = 低ボラの絞り込みなし、M0 = B3 と B2 の上位10ずつの50:50混合、T2 = その約20銘柄を直近20営業日の夜間リターン平均で並べ替えた上位10）。定義を 2026-09-17 までのデータで固めたので、**2026-09-24 に買った分（9/18 判断）から**数える。カレンダーには出さず、この台帳にだけ足す（`ps\Build-TwoStagePicks.ps1`、設定は `config.b3l_2026_b3/m0/t2.json`）。
 - 系統ごとに開始日を変えられる（`ps\Update-ForwardTest.ps1` の `$variants` の `start`）。
   `B2 10銘柄+窓調整` は **2026-09-28** から。窓モデルの設計（説明変数の選択・予測開始年）を
   2026-09-24買いまでの結果を見て決めたので、それ以前を混ぜると未評価データでの判定にならない。

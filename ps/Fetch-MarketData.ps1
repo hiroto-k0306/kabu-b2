@@ -14,7 +14,10 @@ $targets = @(
     @{ name = "1357"; symbol = "1357.T"; offset = 9 },   # 日経ダブルインバース（-2倍）
     @{ name = "GSPC"; symbol = "^GSPC"; offset = -5 },
     @{ name = "VIX"; symbol = "^VIX"; offset = -5 },
-    @{ name = "USDJPY"; symbol = "JPY=X"; offset = 1 }
+    @{ name = "USDJPY"; symbol = "JPY=X"; offset = 1 },
+    # カレンダーの「放置」パターン用（東証ETF。投資信託の基準価額は取れないので、連動するETFで代用する）
+    @{ name = "2558"; symbol = "2558.T"; offset = 9 },   # MAXIS 米国株式(S&P500)上場投信
+    @{ name = "2559"; symbol = "2559.T"; offset = 9 }    # MAXIS 全世界株式(オール・カントリー)上場投信
 )
 $outDir = Split-Path (Resolve-ProjectPath "data/raw/market/daily_since2000/placeholder") -Parent
 $headers = @{ "User-Agent" = "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" }

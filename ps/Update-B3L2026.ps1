@@ -31,12 +31,16 @@ if (-not $SkipRanking) {
 
 # 2. B2の選定 -> data/processed/b3l/*.csv
 if (-not $SkipSignals) {
-    Invoke-Step -Title "B2の信号と上位銘柄(TopK=10)" -Script "Test-CrossSectionSignals.ps1" -ScriptArgs @("-Phase", "Reference", "-Signal", "B3L", "-TopK", "10")
+    # -AlsoShow B3: 低ボラ条件のない B3 の上位10も同じ出力に入れる（未知データの台帳の B3・M0・T2 用）
+    Invoke-Step -Title "B2の信号と上位銘柄(TopK=10)" -Script "Test-CrossSectionSignals.ps1" -ScriptArgs @("-Phase", "Reference", "-Signal", "B3L", "-AlsoShow", "B3", "-TopK", "10")
     Invoke-Step -Title "picksをdate,rank,codeへ変換" -Script "Export-B3LPicks.ps1"
+    Invoke-Step -Title "B3のpicksをdate,rank,codeへ変換" -Script "Export-B3LPicks.ps1" -ScriptArgs @("-Column", "picks_B3", "-OutDir", "data/processed/b3")
 }
 
 # 3. 比較用ユニバース -> data/processed/combo/*.csv
 Invoke-Step -Title "比較用ユニバースの作成" -Script "Build-ComboPicks.ps1"
+#    未知データの台帳用: M0（B3 と B2 の50:50混合）と T2（その約20銘柄を夜間リターン20日平均で並べ替えた上位10）
+Invoke-Step -Title "M0 と T2 の銘柄の作成" -Script "Build-TwoStagePicks.ps1"
 
 # 4. 6通りのS株シミュレーション
 foreach ($c in @("top3", "top5", "top10", "nk10", "prime10", "mix55")) {
@@ -48,9 +52,16 @@ foreach ($c in @("top3", "top5", "top10", "nk10", "prime10", "mix55")) {
 Invoke-Step -Title "窓の大きさの予測" -Script "Build-OvernightVolModel.ps1" -Config "ps/config.overnight_vol.json"
 Invoke-Step -Title "シミュレーション top10vol" -Script "Simulate-SKabu.ps1" -Config "ps/config.b3l_2026_top10vol.json"
 
+# 4-3. B3・M0・T2（カレンダーには出さず、未知データの台帳にだけ足す）
+foreach ($c in @("b3", "m0", "t2")) {
+    Invoke-Step -Title "シミュレーション $c" -Script "Simulate-SKabu.ps1" -Config "ps/config.b3l_2026_$c.json"
+}
+
 # 5. カレンダー用データ と 翌営業日の銘柄
 Invoke-Step -Title "calendar_data.json の作成" -Script "Export-CalendarData.ps1"
 Invoke-Step -Title "翌営業日に買う銘柄" -Script "Get-TodayPicks.ps1" -ScriptArgs @("-Budget", "$Budget")
+# calendar.html を「放置」パターン（S&P500・オルカン）に対応させる。直してあれば何もしない
+Invoke-Step -Title "calendar.html の放置パターン対応" -Script "Patch-CalendarHold.ps1"
 Invoke-Step -Title "calendar.html への埋め込み" -Script "Update-Calendar.ps1"
 
 # 5-2. 未知データでの成績を台帳に足す(既に書いた日は触らない)
