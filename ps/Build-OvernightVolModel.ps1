@@ -33,6 +33,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 . "$PSScriptRoot\Common.ps1"
+. "$PSScriptRoot\RealizationTiming.ps1"
 Set-Location (Get-ProjectRoot)
 
 $config = Get-Config
@@ -46,7 +47,7 @@ Write-Host "選定日 $($ranking.Count)日 / 銘柄 $($codes.Count)"
 
 $book = Import-PriceBook -Config $config -Codes $codes
 $px = $book.px
-$calendar = $book.calendar
+$calendar = @((Import-Csv (Resolve-ProjectPath "data/raw/market/daily_since2000/N225.csv") -Encoding UTF8) | Where-Object { [string]$_.date -ge [string]$book.calendar[0] } | ForEach-Object { [string]$_.date })
 foreach ($c in $codes) { if ($px.ContainsKey($c)) { [void](Set-InvalidPriceRows -Series $px[$c]) } }
 Write-Host "カレンダー $($calendar[0]) - $($calendar[-1]) ($($calendar.Count)日)"
 
@@ -152,8 +153,7 @@ foreach ($t in ($ranking.Keys | Sort-Object)) {
         if ([double]::IsNaN($pc) -or [double]::IsNaN($po) -or $pc -le 0 -or $po -le 0) { continue }
         $sum += ($po / $pc - 1.0); $n++
     }
-    if ($n -lt [Math]::Ceiling($picks.Count / 2.0)) { continue }
-    $r = $sum / $n
+     $r = if ($n -eq $picks.Count -and $n -gt 0) { $sum / $n } else { [double]::NaN }
     $rv = (100.0 * $r) * (100.0 * $r)
 
     # 説明変数: t の引けまでの情報 + 事前に分かるカレンダー
@@ -191,9 +191,8 @@ Write-Host "使える買付日 $($rows.Count)日  $($rows[0].target_date) .. $($
 $all = @($rows | Sort-Object target_date)
 for ($k = 0; $k -lt $all.Count; $k++) {
     $d1 = [double]::NaN; $w = [double]::NaN; $m = [double]::NaN
-    if ($k -ge 1) { $d1 = $all[$k - 1].rv_pct2 }
-    if ($k -ge 5) { $s = 0.0; for ($j = $k - 5; $j -lt $k; $j++) { $s += $all[$j].rv_pct2 }; $w = $s / 5.0 }
-    if ($k -ge 22) { $s = 0.0; for ($j = $k - 22; $j -lt $k; $j++) { $s += $all[$j].rv_pct2 }; $m = $s / 22.0 }
+    $lags = Get-RealizedLags -Rows $all -AsOf $all[$k].forecast_date
+    $d1 = $lags[0]; $w = $lags[1]; $m = $lags[2]
     $all[$k] | Add-Member -NotePropertyName rv_lag1 -NotePropertyValue $d1
     $all[$k] | Add-Member -NotePropertyName rv_lag5 -NotePropertyValue $w
     $all[$k] | Add-Member -NotePropertyName rv_lag22 -NotePropertyValue $m
@@ -268,8 +267,9 @@ $years = @($use | ForEach-Object { [int]$_.target_date.Substring(0, 4) } | Sort-
 $preds = New-Object System.Collections.Generic.List[object]
 
 foreach ($y in $years) {
-    $train = @($use | Where-Object { [int]$_.target_date.Substring(0, 4) -lt $y })
+    $train = @()
     $test  = @($use | Where-Object { [int]$_.target_date.Substring(0, 4) -eq $y })
+    if ($test.Count -gt 0) { $train = @(Get-RealizedHistory -Rows $use -AsOf $test[0].forecast_date) }
     if ($train.Count -lt $MinTrain -or $test.Count -eq 0) { Write-Warning "$y : 学習 $($train.Count)日で足りない。飛ばす"; continue }
 
     $xt = @(); $yt = @()
@@ -332,6 +332,8 @@ foreach ($y in $years) {
         floor_pct_squared = $Floor
         n_train = $train.Count
         train_target_max = $train[-1].target_date
+        train_realization_max = $train[-1].sell_date
+        training_cutoff = $test[0].forecast_date
     }
     [IO.File]::WriteAllText((Join-Path $outDirFull "model_$y.json"), ([PSCustomObject]$model | ConvertTo-Json -Depth 5), (New-Object Text.UTF8Encoding $false))
     Write-Host ("  $y : 学習 $($train.Count)日 → 予測 $($test.Count)日  水準補正 {0:N3}" -f $corr)
@@ -346,6 +348,8 @@ $predOrder = @($preds | Sort-Object target_date)
 $histR = New-Object System.Collections.Generic.List[double]
 $histP = New-Object System.Collections.Generic.List[double]
 foreach ($r in $predOrder) {
+    $histR.Clear(); $histP.Clear()
+    foreach ($h in $predOrder) { if ([string]::CompareOrdinal($h.sell_date,$r.forecast_date) -le 0 -and -not [double]::IsNaN($h.realized_variance_pct2)) { $histR.Add($h.realized_variance_pct2); $histP.Add($h.pred_raw_pct2) } }
     $adj = 1.0
     if (-not $NoRecal -and $histR.Count -ge $RecalMinObs) {
         $from = 0
@@ -364,8 +368,8 @@ foreach ($r in $predOrder) {
     $r.pred_sigma_pct = [Math]::Sqrt($pv)
     $r | Add-Member -NotePropertyName recal_adj -NotePropertyValue $adj -Force
     # 実績が分かってから履歴に入れる(この行の予測には使っていない)
-    $histR.Add($r.realized_variance_pct2)
-    $histP.Add($r.pred_raw_pct2)
+    # Current unresolved target is not available for recalibration.
+    # Calibration history is reconstructed by realization cutoff.
 }
 
 # --- 比較用EWMA と 一定値 ---
@@ -373,18 +377,19 @@ $predSorted = @($preds | Sort-Object target_date)
 $rvByDate = New-Object 'System.Collections.Generic.Dictionary[string,double]'
 foreach ($r in $use) { $rvByDate[[string]$r.target_date] = $r.rv_pct2 }
 $ewmaByDate = New-Object 'System.Collections.Generic.Dictionary[string,double]'
-$e = $null
 foreach ($r in $use) {
-    if ($null -eq $e) { $e = $r.rv_pct2 } else { $ewmaByDate[[string]$r.target_date] = $e; $e = $EwmaLambda * $e + (1.0 - $EwmaLambda) * $r.rv_pct2 }
+    $e = $null
+    foreach ($h in (Get-RealizedHistory -Rows $use -AsOf $r.forecast_date)) { if ($null -eq $e) { $e = $h.rv_pct2 } else { $e = $EwmaLambda * $e + (1.0-$EwmaLambda)*$h.rv_pct2 } }
+    if ($null -ne $e) { $ewmaByDate[[string]$r.target_date] = $e }
 }
 $firstYear = [int]$predSorted[0].target_date.Substring(0, 4)
-$pre = @($use | Where-Object { [int]$_.target_date.Substring(0, 4) -lt $firstYear })
+$pre = @(Get-RealizedHistory -Rows $use -AsOf $predSorted[0].forecast_date)
 $constPred = ($pre | Measure-Object -Property rv_pct2 -Average).Average
 
 $real = @(); $pm = @(); $pe = @(); $pc = @()
 foreach ($r in $predSorted) {
     $d = [string]$r.target_date
-    if (-not $ewmaByDate.ContainsKey($d)) { continue }
+    if (-not $ewmaByDate.ContainsKey($d) -or [double]::IsNaN($r.realized_variance_pct2)) { continue }
     $real += $r.realized_variance_pct2
     $pm += $r.pred_variance_pct2
     $pe += $ewmaByDate[$d]
@@ -419,12 +424,13 @@ Write-Host ("  EWMAとの差 {0:N6}  t値 {1:N3}  (負で大きいほど改善)"
 # 連休の効き方
 Write-Host ""
 Write-Host "  窓の暦日数ごとの実現値(%^2)と予測値"
-foreach ($g in ($predSorted | Group-Object gap_days | Sort-Object { [int]$_.Name })) {
+foreach ($g in ($predSorted | Where-Object { -not [double]::IsNaN($_.realized_variance_pct2) } | Group-Object gap_days | Sort-Object { [int]$_.Name })) {
     $rr = ($g.Group | Measure-Object -Property realized_variance_pct2 -Average).Average
     $pp = ($g.Group | Measure-Object -Property pred_variance_pct2 -Average).Average
     Write-Host ("    {0}日  {1,4}件  実現 {2,8:N4}  予測 {3,8:N4}" -f $g.Name, $g.Count, $rr, $pp)
 }
 
+$predSorted | Select-Object forecast_date,target_date,sell_date,model_year,pred_raw_pct2,pred_variance_pct2,pred_sigma_pct,gap_days,source,recal_adj | Export-CsvNoBom -Path (Join-Path $outDirFull "forecasts.csv")
 $all | Export-CsvNoBom -Path (Join-Path $outDirFull "dataset.csv")
 $predSorted | Export-CsvNoBom -Path (Join-Path $outDirFull "predictions.csv")
 Write-Host ""

@@ -176,14 +176,25 @@ function Test-AtLimit {
     return ([Math]::Abs($Price - ($Base + $w)) -lt 0.5) -or ([Math]::Abs($Price - ($Base - $w)) -lt 0.5)
 }
 
+function Get-LastKnownPositionValue {
+    param($Position, [string]$Date)
+    $series = $px[$Position.code]
+    $last = -1
+    foreach ($kv in $series.idx.GetEnumerator()) {
+        if ([string]::CompareOrdinal([string]$kv.Key, $Date) -le 0 -and $kv.Value -gt $last -and -not [double]::IsNaN($series.adjClose[$kv.Value])) { $last = $kv.Value }
+    }
+    if ($last -ge 0) { return $Position.shares * $Position.entryRaw * $series.adjClose[$last] / $Position.entryAdj }
+    return $Position.shares * $Position.entryRaw
+}
+
 function Get-PositionsValue {
-    # 保有中の銘柄をその日の終値で評価した金額（データが無い日は取得価格で評価）
+    # 当日の終値で評価。欠損日は当日までの最終有効終値、履歴が無い場合だけ取得価格。
     param($Positions, [string]$Date)
     $v = 0.0
     foreach ($pos in $Positions) {
         $i = Get-PxIndex -Code $pos.code -Date $Date
         if ($i -ge 0) { $v += $pos.shares * $pos.entryRaw * $px[$pos.code].adjClose[$i] / $pos.entryAdj }
-        else { $v += $pos.shares * $pos.entryRaw }
+        else { $v += Get-LastKnownPositionValue -Position $pos -Date $Date }
     }
     return $v
 }
@@ -521,7 +532,7 @@ function Invoke-SKabuSimulation {
         foreach ($pos in $positions) {
             $i = Get-PxIndex -Code $pos.code -Date $date
             if ($i -ge 0) { $posValue += $pos.shares * $pos.entryRaw * $px[$pos.code].adjClose[$i] / $pos.entryAdj }
-            else { $posValue += $pos.shares * $pos.entryRaw }
+            else { $posValue += Get-LastKnownPositionValue -Position $pos -Date $date }
         }
         $equity = $cash + $posValue
         if ($equity -gt $peak) { $peak = $equity }

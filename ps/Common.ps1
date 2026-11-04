@@ -324,7 +324,7 @@ function ConvertTo-JsonNumber {
 
 function Resolve-ProjectPath {
     param([Parameter(Mandatory)][string]$RelativePath)
-    $full = Join-Path (Get-ProjectRoot) $RelativePath
+    $full = if ([IO.Path]::IsPathRooted($RelativePath)) { $RelativePath } else { Join-Path (Get-ProjectRoot) $RelativePath }
     $dir = Split-Path $full -Parent
     if (-not (Test-Path $dir)) {
         New-Item -ItemType Directory -Path $dir -Force | Out-Null

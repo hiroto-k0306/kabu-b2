@@ -1,4 +1,4 @@
-// 東証プライム全銘柄の長期日足から、README 15. の信号ごとに「上位10を等分」した夜間リターンを日ごとに計算する。
+﻿// 東証プライム全銘柄の長期日足から、README 15. の信号ごとに「上位10を等分」した夜間リターンを日ごとに計算する。
 // PowerShell の Add-Type でコンパイルして使う（Windows 標準の .NET だけで動くよう C# 5 の文法に限定）。
 using System;
 using System.Collections.Generic;
@@ -27,12 +27,14 @@ public class CrossSectionStudy
         public string BuyDate;       // t+1（引けで買う）
         public string SellDate;      // t+2（寄りで売る）
         public int Eligible;
+        public int MissingOutcomes;
         public double MarketEw;      // 対象銘柄の等分の夜間リターン
         public double N225;          // 日経平均の夜間リターン（配当なし）
         public double[] Signal;      // SignalNames の順。上位10が揃わない日は NaN
         public string[] Picks;
         // 各信号の上位topKの、順位ごとの夜間リターン（README 25.）
         public double[][] PickRets;
+        public double[] B3LOvernightRms60;
         // includeLatest のときだけ: B3L の候補を順位順に "コード:スコア:終値:値動き" で並べたもの
         public List<string> Candidates;
         // RunWithGroups のときだけ: グループ番号(1,2)ごとの 全銘柄等分 / 平均売買代金上位 topK の等分 のリターン
@@ -160,6 +162,7 @@ public class CrossSectionStudy
         var to20b = new Roll(S, 24, 5);      // t-24..t-5
         var on250 = new Roll(S, 249, 0);
         var on60 = new Roll(S, 59, 0);
+        var on60sq = new Roll(S, 59, 0);
         var id250 = new Roll(S, 249, 0);
         var cc250 = new Roll(S, 249, 0);
         var cc250sq = new Roll(S, 249, 0);
@@ -183,28 +186,30 @@ public class CrossSectionStudy
         for (int g = 0; g < 3; g++) gLists[g] = new List<KeyValuePair<double, int>>();
         var gSum = new double[3];
         var gCnt = new int[3];
+        var gValid = new int[3];
 
         for (int t = 0; t < T; t++)
         {
             to20prev.Step(t, TO); to20incl.Step(t, TO); to5.Step(t, TO); to20b.Step(t, TO);
-            on250.Step(t, ON); on60.Step(t, ON); id250.Step(t, ID); cc250.Step(t, CC); cc250sq.Step(t, CC2);
+            on250.Step(t, ON); on60.Step(t, ON); on60sq.Step(t, (s, i) => { double v = ON(s, i); return v * v; }); id250.Step(t, ID); cc250.Step(t, CC); cc250sq.Step(t, CC2);
             bool latest = (t + 2 >= T);
             if (latest && !includeLatest) continue;
 
             for (int k = 0; k < K; k++) scores[k].Clear();
-            int eligible = 0; double sumRet = 0;
-            for (int g = 0; g < 3; g++) { gLists[g].Clear(); gSum[g] = 0; gCnt[g] = 0; }
+            int eligible = 0, validRetCount = 0; double sumRet = 0;
+            for (int g = 0; g < 3; g++) { gLists[g].Clear(); gSum[g] = 0; gCnt[g] = 0; gValid[g] = 0; }
             for (int s = 0; s < S; s++)
             {
                 if (!ok[s][t]) continue;
-                if (!latest && (!ok[s][t + 1] || !ok[s][t + 2])) continue;
+                // Eligibility is measurable through t; failed execution is a later outcome.
                 if (to20incl.Cnt[s] < 15 || to20incl.Sum[s] / to20incl.Cnt[s] < minTurnover) continue;
                 if (minRawPrice > 0 && !(rawC[s][t] >= minRawPrice)) continue;
-                double ret = latest ? double.NaN : (double)aO[s][t + 2] / aC[s][t + 1] - 1;
+                double ret = (latest || !ok[s][t + 1] || !ok[s][t + 2]) ? double.NaN : (double)aO[s][t + 2] / aC[s][t + 1] - 1;
                 rets[s] = ret;
-                eligible++; sumRet += ret;
+                eligible++;
+                if (!double.IsNaN(ret)) { sumRet += ret; validRetCount++; }
                 int gi = groupIdx[s];
-                if (gi > 0) { gSum[gi] += ret; gCnt[gi]++; gLists[gi].Add(new KeyValuePair<double, int>(to20incl.Sum[s] / to20incl.Cnt[s], s)); }
+                if (gi > 0) { if (!double.IsNaN(ret)) { gSum[gi] += ret; gValid[gi]++; } gCnt[gi]++; gLists[gi].Add(new KeyValuePair<double, int>(to20incl.Sum[s] / to20incl.Cnt[s], s)); }
 
                 double toT = TO(s, t);
                 double a1 = double.NaN;
@@ -263,7 +268,8 @@ public class CrossSectionStudy
             row.BuyDate = (t + 1 < T) ? calDates[t + 1] : "";
             row.SellDate = (t + 2 < T) ? calDates[t + 2] : "";
             row.Eligible = eligible;
-            row.MarketEw = latest ? double.NaN : sumRet / eligible;
+            row.MissingOutcomes = eligible - validRetCount;
+            row.MarketEw = (latest || validRetCount == 0) ? double.NaN : sumRet / validRetCount;
             row.N225 = latest ? double.NaN : n225Open[t + 2] / n225Close[t + 1] - 1;
             row.Signal = new double[K];
             row.Picks = new string[K];
@@ -303,6 +309,7 @@ public class CrossSectionStudy
                 var pr = new double[topK];
                 for (int j = 0; j < topK; j++) pr[j] = rets[chosen[j]];
                 row.PickRets[k] = pr;
+                if (k == 8) { row.B3LOvernightRms60 = new double[topK]; for (int j = 0; j < topK; j++) { int s = chosen[j]; row.B3LOvernightRms60[j] = on60sq.Cnt[s] >= 48 ? Math.Sqrt(on60sq.Sum[s] / on60sq.Cnt[s]) : double.NaN; } }
             }
             if (latest)
             {
@@ -326,7 +333,7 @@ public class CrossSectionStudy
                 for (int g = 1; g < 3; g++)
                 {
                     row.GroupCount[g] = gCnt[g];
-                    row.GroupEw[g] = gCnt[g] > 0 ? gSum[g] / gCnt[g] : double.NaN;
+                    row.GroupEw[g] = gValid[g] > 0 ? gSum[g] / gValid[g] : double.NaN;
                     var list = gLists[g];
                     if (list.Count < topK) { row.GroupTop[g] = double.NaN; row.GroupPicks[g] = ""; continue; }
                     list.Sort(delegate (KeyValuePair<double, int> x, KeyValuePair<double, int> y)

@@ -41,7 +41,7 @@ if ($Phase -ne "Develop" -or $Signal) { $useNames = @($Signal) }
 if ($AlsoShow) { $useNames = @($useNames) + @($AlsoShow -split ",") }
 
 $flat = foreach ($r in $rows) {
-    $o = [ordered]@{ date = $r.Date; eligible = $r.Eligible; market_ew = $r.MarketEw; n225 = $r.N225 }
+    $o = [ordered]@{ date = $r.Date; eligible = $r.Eligible; missing_outcomes = $r.MissingOutcomes; market_ew = $r.MarketEw; n225 = $r.N225 }
     foreach ($n in $useNames) { $k = [Array]::IndexOf($names, $n); $o[$n] = $r.Signal[$k]; $o["picks_$n"] = $r.Picks[$k] }
     [PSCustomObject]$o
 }

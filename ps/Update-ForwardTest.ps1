@@ -172,7 +172,7 @@ if ($days.Count -eq 0) {
     $md.Add("まだ記録がない。")
 } else {
     $md.Add("モデルを固めた後に出てきたデータ($StartDate に買った分から)での成績。")
-    $md.Add("**$($days[0]) 〜 $($days[-1]) / $($days.Count)営業日**。元手 $('{0:N0}' -f $Account)円・利益を再投資・コスト$CostBps bp・税引後。")
+    $md.Add("**$($days[0]) - $($days[-1]) / $($days.Count)営業日**。初期資金 $('{0:N0}' -f $Account)円・複利再投資・コスト$CostBps bp。以下のpnlは手数料控除後・税引前。税後資産は年次課税シナリオで別途評価。")
     $md.Add("")
     $md.Add("引けで買って翌営業日の寄りで売る。数字は一度書いたら書き換えない(``reports/forward_test/daily.csv`` が元)。")
     $md.Add("")
