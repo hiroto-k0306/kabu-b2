@@ -103,7 +103,8 @@ function Test-Freshness {
     $foreignLimit = Get-MarketDateLimit -AsOf $targetStr -Offset -5
     foreach ($name in @('GSPC','VIX','USDJPY')) {
         $lastDate = Get-LastDate (Join-Path $root "data/raw/market/daily_since2000/$name.csv")
-        if (-not (Test-MarketLastDate -Latest $lastDate -AsOf $targetStr -Offset -5)) { $problems.Add("$name.csv が空、確定境界 $foreignLimit より新しい、または7暦日超の遅延: $lastDate") }
+        $row = Get-DailyLastRow (Join-Path $root "data/raw/market/daily_since2000/$name.csv")
+        if (-not $row -or -not (Test-DailyOhlc $row) -or -not (Test-MarketLastDate -Latest $lastDate -AsOf $targetStr -Offset -5)) { $problems.Add("$name.csv が空、確定境界 $foreignLimit より新しい、または7暦日超の遅延: $lastDate") }
     }
     if ($PricesOnly) { return $problems }
 
