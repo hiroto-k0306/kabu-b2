@@ -345,13 +345,21 @@ function Get-YahooChart {
         # APIのopen/closeは分割調整済みなので、分割日より前の足に分割比率を掛けて戻す。
         [switch]$WithRawPrices,
         # 指定すると Years ではなくこの日付(yyyy-MM-dd)から現在までを取得する（range=max は月足になるため period1/period2 を使う）
-        [string]$StartDate = ""
+        [string]$StartDate = "",
+        # Inclusive final JP session; responses are filtered even if Yahoo ignores period2.
+        [string]$EndDate = ""
     )
     $symbol = "$Code.T"
     $uri = "https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?range=${Years}y&interval=1d"
-    if ($StartDate) {
-        $p1 = ([DateTimeOffset][datetime]::SpecifyKind([datetime]$StartDate, "Utc")).ToUnixTimeSeconds()
+    if ($StartDate -or $EndDate) {
+        $start = if ($StartDate) { [datetime]$StartDate } else { ([datetime]$EndDate).AddYears(-$Years) }
+        $p1 = ([DateTimeOffset][datetime]::SpecifyKind($start, "Utc")).ToUnixTimeSeconds()
         $p2 = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+        if ($EndDate) {
+            # Midnight after EndDate in JST, exclusive.
+            $endUtc = ([datetime]$EndDate).AddDays(1).AddHours(-9)
+            $p2 = ([DateTimeOffset][datetime]::SpecifyKind($endUtc, "Utc")).ToUnixTimeSeconds()
+        }
         $uri = "https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?period1=$p1&period2=$p2&interval=1d"
     }
     if ($WithRawPrices) { $uri += "&events=split" }
@@ -405,6 +413,7 @@ function Get-YahooChart {
         $date = [DateTimeOffset]::FromUnixTimeSeconds([int64]$ts[$i]).UtcDateTime.Date
 
         $dateStr = $date.ToString("yyyy-MM-dd")
+        if ($EndDate -and $dateStr -gt $EndDate) { continue }
         $row = [ordered]@{
             date   = $dateStr
             code   = $Code
@@ -555,3 +564,4 @@ function Get-PrevTradingDay {
     }
     return $Date.AddDays(-1)
 }
+

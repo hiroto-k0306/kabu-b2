@@ -3,7 +3,8 @@
 # 朝に動くので、見るのは「今日」ではなく直近の営業日(ふつうは前営業日)。
 # 使い方: powershell -File ps\Test-DailyUpdate.ps1
 param(
-    [switch]$Force,        # 取引時間中でも取り直す(ふつうは使わない)
+    [switch]$Force,        # 互換用。未確定日の取得は許可しない
+    [switch]$PricesOnly,   # 集計前のゲート。株価だけ検査しpicksは要求しない
     [string]$AsOf = "",    # この日付(yyyy-MM-dd)のデータを見る。既定は直近の営業日
     [switch]$NoRepair,     # 異常でも取り直さず、記録だけする
     [int]$Budget = 500000,
@@ -14,19 +15,14 @@ param(
 
 $ErrorActionPreference = "Stop"
 . "$PSScriptRoot\Common.ps1"
+. "$PSScriptRoot\DailyData.ps1"
 Set-Location (Get-ProjectRoot)
 $root = Get-ProjectRoot
 
 # どの日のデータを見るか。朝に動かす想定なので既定は直近の営業日。
 # 夕方(17時)以降に手で動かしたときだけ当日を見る。
-$now = Get-Date
-if ($AsOf) {
-    $target = [datetime]::ParseExact($AsOf, "yyyy-MM-dd", $null)
-} elseif ((Test-TradingDay -Date $now.Date) -and $now.Hour -ge 17) {
-    $target = $now.Date
-} else {
-    $target = Get-PrevTradingDay -Date $now.Date
-}
+$now = Get-JapanNow
+$target = Resolve-DailyTarget -AsOf $AsOf -NowJapan $now
 $targetStr = $target.ToString("yyyy-MM-dd")
 $logDirFull = Join-Path $root $LogDir
 New-Item -ItemType Directory -Force $logDirFull | Out-Null
@@ -73,13 +69,44 @@ function Test-Freshness {
     if ($ratio -lt $MinFreshRatio) { $problems.Add(("$targetStr 以降に更新された銘柄CSVが {0}/{1} しかない" -f $fresh, $files.Count)) }
 
     # 3. 中身も当日の行で終わっているか(全部読むと重いので抜き取り)
-    $sample = @($files | Get-Random -Count ([Math]::Min($SampleSize, $files.Count)))
+    $sample = @()
+    if ($files.Count -gt 0 -and $SampleSize -gt 0) { $sample = @($files | Get-Random -Count ([Math]::Min($SampleSize, $files.Count))) }
     $stale = @($sample | Where-Object { (Get-LastDate $_.FullName) -ne $targetStr })
     Write-Log ("  抜き取り {0}銘柄: 最終行が $targetStr でないもの {1}件" -f $sample.Count, $stale.Count)
     # 上場廃止・取引停止の銘柄は当日の行を持たないので、少数なら異常としない
     if ($stale.Count -gt [Math]::Max(2, $sample.Count * 0.1)) {
         $problems.Add(("抜き取り{0}銘柄中{1}銘柄の最終行が $targetStr でない: {2}" -f $sample.Count, $stale.Count, (($stale | Select-Object -First 5 | ForEach-Object { $_.BaseName }) -join ", ")))
     }
+
+    # Require exact target-date content in addition to the original write-time/sample checks.
+    # Also reject ANY newer cached row; a failed fetch must not leak an in-progress bar.
+    $universePath = Join-Path $root 'data/raw/universe/prime.csv'
+    if (-not (Test-Path $universePath)) { $problems.Add('Expected universe is missing'); return $problems }
+    $expected = @(Import-Csv $universePath -Encoding UTF8 | Select-Object -ExpandProperty code -Unique)
+    $exact = 0; $future = New-Object System.Collections.Generic.List[string]
+    foreach ($code in $expected) {
+        $row = Get-DailyLastRow (Join-Path $tickerDir "$code.csv")
+        if ($row -and $row.date -eq $targetStr -and (Test-DailyStockRow $row)) { $exact++ }
+    }
+    foreach ($file in $files) {
+        if ((Get-LastDate $file.FullName) -gt $targetStr) { $future.Add($file.BaseName) }
+    }
+    $contentRatio = if ($expected.Count) { $exact / $expected.Count } else { 0 }
+    Write-Log "  対象日の有効な最終行: $exact/$($expected.Count); 対象日より後: $($future.Count)"
+    if ($contentRatio -lt $MinFreshRatio) { $problems.Add("対象日 $targetStr の有効な株価内容が $exact/$($expected.Count) のみ") }
+    if ($future.Count) { $problems.Add("対象日より後の株価が残っている: $($future -join ', ')") }
+    foreach ($name in @('1321','N225','1571','1357','2558','2559')) {
+        $lastDate = Get-LastDate (Join-Path $root "data/raw/market/daily_since2000/$name.csv")
+        $row = Get-DailyLastRow (Join-Path $root "data/raw/market/daily_since2000/$name.csv")
+        if ($lastDate -ne $targetStr -or -not $row -or -not (Test-DailyOhlc $row)) { $problems.Add("$name.csv の有効な最終日が $lastDate (期待 $targetStr)") }
+    }
+    $foreignLimit = Get-MarketDateLimit -AsOf $targetStr -Offset -5
+    foreach ($name in @('GSPC','VIX','USDJPY')) {
+        $lastDate = Get-LastDate (Join-Path $root "data/raw/market/daily_since2000/$name.csv")
+        $row = Get-DailyLastRow (Join-Path $root "data/raw/market/daily_since2000/$name.csv")
+        if (-not $row -or -not (Test-DailyOhlc $row) -or -not (Test-MarketLastDate -Latest $lastDate -AsOf $targetStr -Offset -5)) { $problems.Add("$name.csv が空、確定境界 $foreignLimit より新しい、または7暦日超の遅延: $lastDate") }
+    }
+    if ($PricesOnly) { return $problems }
 
     # 4. 翌営業日の銘柄が当日のデータで作られているか
     $picks = Join-Path $root "reports/today_picks.json"
@@ -116,20 +143,19 @@ if ($problems.Count -eq 0) {
     Write-Log "=== 正常: $targetStr のデータはそろっている ==="
 } else {
     foreach ($p in $problems) { Write-Log "異常: $p" "WARN" }
-    # 取引時間中(9:00〜16:00)に取ると最新行が途中の値になるので手を出さない。
-    $inMarket = (Test-TradingDay -Date $now.Date) -and $now.Hour -ge 9 -and $now.Hour -lt 16
+    # Retry only the resolved completed target, never the live session.
     if ($NoRepair) {
         Write-Log "NoRepair が指定されているので取り直さない"
-    } elseif ($inMarket -and -not $Force) {
-        Write-Log "取引時間中なので取り直さない。17時の更新を待つこと(急ぐなら -Force)" "WARN"
+
     } else {
         Write-Log "--- 取り直しを実行する"
-        # Invoke-DailyUpdate は当日基準で動くので、前営業日の分を取りに行くため -Force を渡す
-        & (Get-PowerShellExe) -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root "ps/Invoke-DailyUpdate.ps1") -Budget $Budget -Force *>> $logPath
+        # Repair the same completed target even when the morning job starts late.
+        & (Get-PowerShellExe) -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root "ps/Invoke-DailyUpdate.ps1") -Budget $Budget -Force -AsOf $targetStr -LogDir $LogDir *>> $logPath
         $code = $LASTEXITCODE
         $repaired = $true
         Write-Log "取り直し終了 (exit $code)"
         $problems = Test-Freshness
+        if ($code -ne 0) { $problems = @($problems) + "取り直しが失敗した (exit $code)" }
         if ($problems.Count -eq 0) { Write-Log "=== 復旧した ===" }
         else { foreach ($p in $problems) { Write-Log "復旧できず: $p" "ERROR" } }
     }
@@ -142,3 +168,4 @@ $out = [PSCustomObject]@{
 [IO.File]::WriteAllText($statusPath, ($out | ConvertTo-Json -Depth 5), (New-Object Text.UTF8Encoding $false))
 
 if ($problems.Count -eq 0) { exit 0 } else { exit 1 }
+

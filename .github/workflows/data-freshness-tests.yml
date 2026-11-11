@@ -1,0 +1,40 @@
+name: data-freshness-tests
+
+on:
+  pull_request:
+    paths:
+      - 'ps/**'
+      - '.github/workflows/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  powershell-core:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - name: Offline data freshness regression
+        shell: pwsh
+        run: ./ps/Test-DataFreshness.ps1
+      - name: Existing temporal boundaries (no model training)
+        shell: pwsh
+        run: ./ps/Test-TemporalBoundaries.ps1 -SkipModel
+
+  windows-powershell:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - name: Offline data freshness regression
+        shell: powershell
+        run: ./ps/Test-DataFreshness.ps1
+      - name: Existing temporal boundaries (no model training)
+        shell: powershell
+        run: ./ps/Test-TemporalBoundaries.ps1 -SkipModel

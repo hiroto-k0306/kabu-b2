@@ -16,7 +16,7 @@ on:
   workflow_dispatch:
     inputs:
       force:
-        description: "最新でも取り直す(取引時間中は動かない)"
+        description: "最新でも確定済み営業日までを取り直す"
         type: boolean
         default: false
 
@@ -54,7 +54,7 @@ jobs:
       - name: 日次更新(株価の取得〜カレンダー・台帳)
         if: steps.need.outputs.needed == 'true'
         shell: pwsh
-        run: ./ps/Invoke-DailyUpdate.ps1 -Force
+        run: ./ps/Invoke-DailyUpdate.ps1 -Force -AsOf ${{ steps.need.outputs.target }}
 
       - name: 取得の確認
         if: steps.need.outputs.needed == 'true'
@@ -79,3 +79,4 @@ jobs:
           name: daily-logs
           path: logs/
           retention-days: 30
+

@@ -2,7 +2,8 @@
 # タスクスケジューラから17時に呼ばれる想定。休業日は何もせずに終わる。
 # 使い方: powershell -File ps\Invoke-DailyUpdate.ps1
 param(
-    [switch]$Force,        # 休業日でも実行する
+    [switch]$Force,        # 休業日でも補完する。未確定日の取得は許可しない
+    [string]$AsOf = "",    # 開始時に固定する確定済み営業日
     [switch]$PricesOnly,   # 株価の取得だけ行い、集計はしない
     [int]$Budget = 500000,
     [string]$LogDir = "logs"
@@ -10,10 +11,14 @@ param(
 
 $ErrorActionPreference = "Stop"
 . "$PSScriptRoot\Common.ps1"
+. "$PSScriptRoot\DailyData.ps1"
 Set-Location (Get-ProjectRoot)
 $root = Get-ProjectRoot
 
-$today    = (Get-Date).Date
+$nowJapan = Get-JapanNow
+$target = Resolve-DailyTarget -AsOf $AsOf -NowJapan $nowJapan
+$targetStr = $target.ToString("yyyy-MM-dd")
+$today    = $nowJapan.Date
 $todayStr = $today.ToString("yyyy-MM-dd")
 $logDirFull = Join-Path $root $LogDir
 New-Item -ItemType Directory -Force $logDirFull | Out-Null
@@ -29,7 +34,7 @@ function Write-Log {
 
 $steps  = New-Object System.Collections.Generic.List[object]
 $status = [ordered]@{
-    date = $todayStr; startedAt = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+    date = $targetStr; runDate = $todayStr; startedAt = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
     finishedAt = ""; ok = $false; skipped = $false; error = ""; steps = $steps
 }
 function Save-Status {
@@ -47,14 +52,9 @@ if (-not $Force -and -not (Test-TradingDay -Date $today)) {
     exit 0
 }
 
-# 取引時間中(9:00〜15:30)に取ると最新行が途中の値になる
-$now = Get-Date
-if (-not $Force -and $now.Hour -lt 16) {
-    Write-Log "大引け後(16時以降)に実行すること。今は $($now.ToString('HH:mm'))" "ERROR"
-    $status.error = "16時より前の実行"
-    Save-Status
-    exit 1
-}
+# The target is a completed JP session. Every fetch receives the same cap, so a
+# delayed morning job can safely finish after the next session has opened.
+Write-Log "確定済みの対象営業日: $targetStr (これより後の足は使わない)"
 
 function Invoke-Step {
     param([string]$Title, [string]$Script, [string[]]$ScriptArgs = @(), [string]$Config = "")
@@ -69,8 +69,9 @@ function Invoke-Step {
 }
 
 try {
-    Invoke-Step -Title "株価の取得(全銘柄を取り直す)" -Script "Fetch-UniversePrices.ps1" -ScriptArgs @("-Refresh") -Config "ps/config.prime_daily.json"
-    Invoke-Step -Title "指数・為替の取得"             -Script "Fetch-MarketData.ps1"
+    Invoke-Step -Title "株価の取得(全銘柄を取り直す)" -Script "Fetch-UniversePrices.ps1" -ScriptArgs @("-Refresh", "-AsOf", $targetStr, "-LogDir", $LogDir) -Config "ps/config.prime_daily.json"
+    Invoke-Step -Title "指数・為替の取得"             -Script "Fetch-MarketData.ps1" -ScriptArgs @("-AsOf", $targetStr, "-LogDir", $LogDir)
+    Invoke-Step -Title "集計前の取得・時点境界確認" -Script "Test-DailyUpdate.ps1" -ScriptArgs @("-NoRepair", "-PricesOnly", "-AsOf", $targetStr, "-LogDir", $LogDir)
 
     if ($PricesOnly) {
         Write-Log "PricesOnly が指定されたので集計は行わない"
@@ -89,3 +90,4 @@ try {
 
 Save-Status
 exit 0
+
