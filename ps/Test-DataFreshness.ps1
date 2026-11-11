@@ -88,7 +88,7 @@ try {
     Assert ($global:B2FreshnessTestState.requestCounts['^N225'] -eq 2) 'HTTP-success missing target was not retried'
     Assert ($global:B2FreshnessTestState.sleeps.Contains(1)) 'Missing target retry did not wait'
     Assert ((Get-DailyLastDate "$fixture/data/raw/market/daily_since2000/N225.csv") -eq $global:B2FreshnessTestState.target) 'Recovered target not saved'
-    $md=@(Get-Content "$fixture/logs/market_fetch.json" -Raw | ConvertFrom-Json)
+    $md=Get-Content "$fixture/logs/market_fetch.json" -Raw | ConvertFrom-Json
     $nk=@($md | Where-Object symbol -eq '^N225')
     Assert ($nk.Count -eq 2 -and -not $nk[0].ok -and $nk[1].ok) 'Retry diagnostics wrong'
     Assert ($nk[0].latestReturnedDate -eq '2026-11-11' -and $nk[0].latestValidDate -eq '2026-11-09') 'Null/future diagnostic wrong'
@@ -116,7 +116,7 @@ try {
     & "$fixture/ps/Fetch-UniversePrices.ps1" -Refresh -AsOf $global:B2FreshnessTestState.target -RetryDelaySeconds 1 -MaxAttempts 3
     Assert ($global:B2FreshnessTestState.requestCounts['1111.T'] -eq 2 -and $global:B2FreshnessTestState.requestCounts['2222.T'] -eq 3) 'Selective stock retry failed'
     Assert ($global:B2FreshnessTestState.requestCounts['3333.T'] -eq 2) 'Malformed stock payload was not retried'
-    $sd=@(Get-Content "$fixture/logs/stock_fetch.json" -Raw | ConvertFrom-Json)
+    $sd=Get-Content "$fixture/logs/stock_fetch.json" -Raw | ConvertFrom-Json
     Assert (@($sd | Where-Object { $_.symbol -eq '3333.T' -and $_.reason -like 'payload_error:*' }).Count -eq 1) 'Malformed stock diagnostics missing'
     Assert ((Get-DailyLastDate "$fixture/data/raw/stocks/prime_since2000/1111.csv") -eq $global:B2FreshnessTestState.target) 'Recovered stock missing'
     Assert ([IO.File]::ReadAllText("$fixture/data/raw/stocks/prime_since2000/2222.csv") -ceq $before) 'Stale stock overwrote cache'
@@ -173,3 +173,6 @@ try {
     if ($oldMockState) { Set-Variable -Name B2FreshnessTestState -Scope Global -Value $oldMockState.Value }
     else { Remove-Variable -Name B2FreshnessTestState -Scope Global -ErrorAction SilentlyContinue }
 }
+
+# Expected failing child checks must not leak their exit code to a CI wrapper.
+exit 0
