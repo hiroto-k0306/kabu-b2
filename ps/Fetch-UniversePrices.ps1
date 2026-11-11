@@ -4,46 +4,65 @@
 # 使い方: $env:KABU_CONFIG = "ps/config.prime.json"; powershell -File ps\Fetch-UniversePrices.ps1
 
 param(
-    # 既にあるCSVも取り直す。1銘柄ずつ .tmp に書いてから置き換えるので、
-    # 失敗した銘柄は前のファイルがそのまま残る(まとめて消す必要がない)。
-    [switch]$Refresh
+    [switch]$Refresh,
+    [string]$AsOf = "",
+    [ValidateRange(1, 5)][int]$MaxAttempts = 3,
+    [ValidateRange(0, 600)][int]$RetryDelaySeconds = 60,
+    [string]$LogDir = "logs"
 )
 
 $ErrorActionPreference = "Stop"
 . "$PSScriptRoot\Common.ps1"
-
+. "$PSScriptRoot\DailyData.ps1"
+if ($AsOf) { $AsOf = (Resolve-DailyTarget -AsOf $AsOf).ToString('yyyy-MM-dd') }
 $config = Get-Config
-$universe = Import-Csv -Path (Resolve-ProjectPath $config.universe.csv) -Encoding UTF8
+$universe = @(Import-Csv -Path (Resolve-ProjectPath $config.universe.csv) -Encoding UTF8)
 $tickerDir = Split-Path (Resolve-ProjectPath "$($config.data.tickerDir)/placeholder") -Parent
-
+$diagnostics = New-Object System.Collections.Generic.List[object]
+$diagnosticPath = Resolve-ProjectPath "$LogDir/stock_fetch.json"
 $sw = [System.Diagnostics.Stopwatch]::StartNew()
 $fetched = 0; $skipped = 0
-$failed = New-Object System.Collections.Generic.List[string]
-$i = 0
-foreach ($u in $universe) {
-    $i++
-    $path = Join-Path $tickerDir "$($u.code).csv"
-    if (-not $Refresh -and (Test-Path $path) -and (Get-Item $path).Length -gt 0) { $skipped++; continue }
-
-    $startDate = ""
-    if ($config.data.startDate) { $startDate = [string]$config.data.startDate }
-    $rows = Get-YahooChart -Code $u.code -Years $config.data.historyYears -WithRawPrices -StartDate $startDate
-    if ($rows.Count -eq 0) {
-        $failed.Add($u.code)
-        Write-Warning "[$i/$($universe.Count)] $($u.code) $($u.name): no data"
-        Start-Sleep -Milliseconds 500
-        continue
+$pending = @($universe | Where-Object {
+    $path = Join-Path $tickerDir "$($_.code).csv"
+    $cached = Get-DailyLastRow $path
+    if (-not $Refresh -and (Test-Path $path) -and (Get-Item $path).Length -gt 0 -and
+        (-not $AsOf -or ($cached -and $cached.date -eq $AsOf -and (Test-DailyStockRow $cached)))) { $skipped++; $false } else { $true }
+})
+for ($attempt = 1; $attempt -le $MaxAttempts -and $pending.Count -gt 0; $attempt++) {
+    if ($attempt -gt 1) {
+        $delay = Get-DailyRetryDelay -Attempt ($attempt - 1) -BaseSeconds $RetryDelaySeconds
+        Write-Host "retry $attempt/$MaxAttempts: $($pending.Count) incomplete symbols after $delay seconds"
+        Start-Sleep -Seconds $delay
     }
-    $tmp = "$path.tmp"
-    $rows | Export-CsvNoBom -Path $tmp
-    Move-Item -Path $tmp -Destination $path -Force
-    $fetched++
-    if ($i % 50 -eq 0) { Write-Host ("[{0}/{1}] fetched {2}, skipped {3}, failed {4}, elapsed {5}" -f $i, $universe.Count, $fetched, $skipped, $failed.Count, $sw.Elapsed) }
-    Start-Sleep -Milliseconds 200
+    $next = New-Object System.Collections.Generic.List[object]
+    foreach ($u in $pending) {
+        $path = Join-Path $tickerDir "$($u.code).csv"
+        $startDate = if ($config.data.startDate) { [string]$config.data.startDate } else { '' }
+        $rows = @(); $fetchError = ''
+        try {
+            $rows = @(Get-YahooChart -Code $u.code -Years $config.data.historyYears -WithRawPrices -StartDate $startDate -EndDate $AsOf)
+        } catch { $fetchError = $_.Exception.Message }
+        $last = if ($rows.Count) { [string]$rows[-1].date } else { '' }
+        $validTarget = @($rows | Where-Object { $_.date -eq $AsOf -and (Test-DailyStockRow $_) }).Count -gt 0
+        $ok = $rows.Count -gt 0 -and (-not $AsOf -or ($last -eq $AsOf -and $validTarget))
+        $reason = if ($fetchError) { "payload_error: $fetchError" } elseif ($ok) { 'complete' } elseif (-not $rows.Count) { 'empty_or_http_failure' } else { 'missing_valid_target_bar' }
+        $diagnostics.Add([pscustomobject]@{ symbol="$($u.code).T"; target=$AsOf; latestDate=$last; attempt=$attempt; rows=$rows.Count; ok=$ok; reason=$reason; checkedAt=[DateTimeOffset]::UtcNow.ToString('o') })
+        if (-not $ok) {
+            $next.Add($u)
+            Write-Warning "$($u.code).T target=$AsOf latest=$last attempt=$attempt/$MaxAttempts reason=$reason; existing CSV preserved"
+            continue
+        }
+        $tmp = "$path.tmp"
+        $rows | Export-CsvNoBom -Path $tmp
+        Move-Item -Path $tmp -Destination $path -Force
+        $fetched++
+        if ($fetched % 50 -eq 0) { Write-Host "fetched $fetched, skipped $skipped, elapsed $($sw.Elapsed)" }
+        Start-Sleep -Milliseconds 200
+    }
+    $pending = @($next.ToArray())
+    Save-DailyDiagnostics -Path $diagnosticPath -Attempts $diagnostics.ToArray()
 }
-
-Write-Host ("done: fetched {0}, already had {1}, failed {2}, elapsed {3}" -f $fetched, $skipped, $failed.Count, $sw.Elapsed)
-if ($failed.Count -gt 0) {
-    Write-Host "failed codes: $($failed -join ', ')"
-    $failed | Set-Content -Path (Join-Path $tickerDir "_failed.txt") -Encoding UTF8
-}
+Write-Host "done: fetched $fetched, already had $skipped, incomplete $($pending.Count), elapsed $($sw.Elapsed)"
+# Small numbers of suspended/delisted names are still handled by the existing aggregate threshold.
+# Unrecovered symbols retain old files; Test-DailyUpdate -PricesOnly blocks material incompleteness.
+@($pending | ForEach-Object { $_.code }) | Set-Content -Path (Join-Path $tickerDir '_failed.txt') -Encoding UTF8

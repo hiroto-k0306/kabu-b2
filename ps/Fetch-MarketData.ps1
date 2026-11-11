@@ -2,8 +2,16 @@
 # 保存先: data/raw/market/daily_since2000/<名前>.csv（date は取引所の現地日付、open/high/low/close は配当調整済み）
 # 使い方: powershell -File ps\Fetch-MarketData.ps1
 
+param(
+    [string]$AsOf = "",
+    [ValidateRange(1, 5)][int]$MaxAttempts = 3,
+    [ValidateRange(0, 600)][int]$RetryDelaySeconds = 60,
+    [string]$LogDir = "logs"
+)
 $ErrorActionPreference = "Stop"
 . "$PSScriptRoot\Common.ps1"
+. "$PSScriptRoot\DailyData.ps1"
+$AsOf = (Resolve-DailyTarget -AsOf $AsOf).ToString('yyyy-MM-dd')
 Set-Location (Get-ProjectRoot)
 
 # 名前, Yahooのシンボル, 足の時刻に足す時間（現地日付にするため。為替の足はロンドン0時=UTC23時/0時に始まるので+1）
@@ -22,35 +30,42 @@ $targets = @(
 $outDir = Split-Path (Resolve-ProjectPath "data/raw/market/daily_since2000/placeholder") -Parent
 $headers = @{ "User-Agent" = "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" }
 
+$diagnostics = New-Object System.Collections.Generic.List[object]
+$failed = New-Object System.Collections.Generic.List[string]
+$diagnosticPath = Resolve-ProjectPath "$LogDir/market_fetch.json"
 foreach ($tg in $targets) {
-    $uri = "https://query1.finance.yahoo.com/v8/finance/chart/$([uri]::EscapeDataString($tg.symbol))?period1=946684800&period2=$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())&interval=1d"
-    $resp = $null
-    for ($attempt = 1; $attempt -le 3; $attempt++) {
-        try { $resp = Invoke-RestMethod -Uri $uri -Headers $headers -TimeoutSec 60; break } catch { Start-Sleep -Seconds (2 * $attempt) }
+    $limit = Get-MarketDateLimit -AsOf $AsOf -Offset $tg.offset
+    # Request through the inclusive cutoff; still filter returned bars defensively below.
+    $p2 = ([DateTimeOffset][datetime]::SpecifyKind(([datetime]$limit).AddDays(1).AddHours(-$tg.offset), 'Utc')).ToUnixTimeSeconds()
+    $uri = "https://query1.finance.yahoo.com/v8/finance/chart/$([uri]::EscapeDataString($tg.symbol))?period1=946684800&period2=$p2&interval=1d"
+    $ok = $false
+    for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+        if ($attempt -gt 1) { Start-Sleep -Seconds (Get-DailyRetryDelay -Attempt ($attempt - 1) -BaseSeconds $RetryDelaySeconds) }
+        $rows = @(); $latest = ''; $returnedLast = ''; $reason = ''
+        try {
+            $resp = Invoke-RestMethod -Uri $uri -Headers $headers -TimeoutSec 60
+            if ($resp.chart.result -and $resp.chart.result[0].timestamp) {
+                $stamp = $resp.chart.result[0].timestamp[-1]
+                $returnedLast = [DateTimeOffset]::FromUnixTimeSeconds([int64]$stamp).UtcDateTime.AddHours($tg.offset).ToString('yyyy-MM-dd')
+            }
+            $rows = @(ConvertFrom-MarketChart -Response $resp -Offset $tg.offset -LastDate $limit)
+            if ($rows.Count) { $latest = [string]$rows[-1].date }
+            # JP benchmarks must contain the exact required session, not just an HTTP 200.
+            $ok = $rows.Count -gt 0 -and (Test-MarketLastDate -Latest $latest -AsOf $AsOf -Offset $tg.offset)
+            $reason = if ($ok) { 'complete' } else { 'missing_valid_target_bar' }
+        } catch { $reason = "request_or_payload_error: $($_.Exception.Message)" }
+        $diagnostics.Add([pscustomobject]@{ symbol=$tg.symbol; target=$AsOf; cutoff=$limit; latestReturnedDate=$returnedLast; latestValidDate=$latest; attempt=$attempt; rows=$rows.Count; ok=$ok; reason=$reason; checkedAt=[DateTimeOffset]::UtcNow.ToString('o') })
+        Save-DailyDiagnostics -Path $diagnosticPath -Attempts $diagnostics.ToArray()
+        if ($ok) {
+            $path = Join-Path $outDir "$($tg.name).csv"
+            $rows | Export-CsvNoBom -Path "$path.tmp"
+            Move-Item -Path "$path.tmp" -Destination $path -Force
+            Write-Host "$($tg.symbol) target=$AsOf cutoff=$limit latest=$latest rows=$($rows.Count) attempt=$attempt"
+            break
+        }
+        Write-Warning "$($tg.symbol) target=$AsOf cutoff=$limit returned=$returnedLast latestValid=$latest attempt=$attempt/$MaxAttempts reason=$reason; existing CSV preserved"
     }
-    if ($null -eq $resp) { Write-Warning "fetch failed: $($tg.symbol)"; continue }
-    $r = $resp.chart.result[0]
-    $q = $r.indicators.quote[0]
-    $adj = $null
-    if ($r.indicators.adjclose) { $adj = $r.indicators.adjclose[0].adjclose }
-    $rows = New-Object System.Collections.Generic.List[object]
-    for ($i = 0; $i -lt $r.timestamp.Count; $i++) {
-        $o = $q.open[$i]; $h = $q.high[$i]; $l = $q.low[$i]; $c = $q.close[$i]
-        if ($null -eq $o -or $null -eq $c -or $null -eq $h -or $null -eq $l -or [double]$c -le 0 -or [double]$o -le 0) { continue }
-        $utc = [DateTimeOffset]::FromUnixTimeSeconds([int64]$r.timestamp[$i]).UtcDateTime
-        $ratio = 1.0
-        if ($adj -and $null -ne $adj[$i]) { $ratio = [double]$adj[$i] / [double]$c }
-        $v = 0.0
-        if ($null -ne $q.volume[$i]) { $v = [double]$q.volume[$i] }
-        $rows.Add([PSCustomObject]@{
-                date = $utc.AddHours($tg.offset).ToString("yyyy-MM-dd")
-                utc_time = $utc.ToString("yyyy-MM-dd HH:mm")
-                open = [double]$o * $ratio; high = [double]$h * $ratio; low = [double]$l * $ratio; close = [double]$c * $ratio
-                raw_open = [double]$o; raw_close = [double]$c; volume = $v
-            })
-    }
-    $path = Join-Path $outDir "$($tg.name).csv"
-    $rows | Export-CsvNoBom -Path $path
-    Write-Host ("{0,-7} {1,5} rows  {2} - {3}  (UTC time of first/last bar: {4} / {5})" -f $tg.name, $rows.Count, $rows[0].date, $rows[-1].date, $rows[0].utc_time, $rows[-1].utc_time)
+    if (-not $ok) { $failed.Add($tg.symbol) }
     Start-Sleep -Milliseconds 500
 }
+if ($failed.Count) { throw "Market data incomplete after $MaxAttempts attempts: $($failed -join ', '). See $diagnosticPath" }
