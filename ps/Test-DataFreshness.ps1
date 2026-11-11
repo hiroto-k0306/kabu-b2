@@ -144,6 +144,11 @@ try {
     }
     & $exe -NoProfile -File "$fixture/ps/Test-DailyUpdate.ps1" -NoRepair -PricesOnly -AsOf $script:target *> "$fixture/gate-invalid.log"
     Assert ($LASTEXITCODE -ne 0) 'Invalid target OHLC escaped content validation'
+    Get-ChildItem "$fixture/data/raw/stocks/prime_since2000" -Filter '*.csv' | Remove-Item
+    & $exe -NoProfile -File "$fixture/ps/Test-DailyUpdate.ps1" -NoRepair -PricesOnly -AsOf $script:target *> "$fixture/gate-empty.log"
+    Assert ($LASTEXITCODE -ne 0) 'Empty stock directory passed gate'
+    $emptyStatus=Get-Content "$fixture/logs/last_check.json" -Raw | ConvertFrom-Json
+    Assert (-not $emptyStatus.ok -and ($emptyStatus.problems -join ' ') -match '0/100') 'Empty directory did not produce actionable diagnostics'
     Write-Output 'PASS: retry on missing target, bounded failures, cache preservation, API error retry, stock/market cutoff, JST/holiday boundaries, and pre-aggregation freshness gate'
     Write-Output "Synthetic evidence: $fixture"
 } finally {

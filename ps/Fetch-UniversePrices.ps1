@@ -31,7 +31,7 @@ $pending = @($universe | Where-Object {
 for ($attempt = 1; $attempt -le $MaxAttempts -and $pending.Count -gt 0; $attempt++) {
     if ($attempt -gt 1) {
         $delay = Get-DailyRetryDelay -Attempt ($attempt - 1) -BaseSeconds $RetryDelaySeconds
-        Write-Host "retry $attempt/$MaxAttempts: $($pending.Count) incomplete symbols after $delay seconds"
+        Write-Host "retry $attempt/${MaxAttempts}: $($pending.Count) incomplete symbols after $delay seconds"
         Start-Sleep -Seconds $delay
     }
     $next = New-Object System.Collections.Generic.List[object]

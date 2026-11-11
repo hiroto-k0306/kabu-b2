@@ -69,7 +69,8 @@ function Test-Freshness {
     if ($ratio -lt $MinFreshRatio) { $problems.Add(("$targetStr 以降に更新された銘柄CSVが {0}/{1} しかない" -f $fresh, $files.Count)) }
 
     # 3. 中身も当日の行で終わっているか(全部読むと重いので抜き取り)
-    $sample = @($files | Get-Random -Count ([Math]::Min($SampleSize, $files.Count)))
+    $sample = @()
+    if ($files.Count -gt 0 -and $SampleSize -gt 0) { $sample = @($files | Get-Random -Count ([Math]::Min($SampleSize, $files.Count))) }
     $stale = @($sample | Where-Object { (Get-LastDate $_.FullName) -ne $targetStr })
     Write-Log ("  抜き取り {0}銘柄: 最終行が $targetStr でないもの {1}件" -f $sample.Count, $stale.Count)
     # 上場廃止・取引停止の銘柄は当日の行を持たないので、少数なら異常としない
