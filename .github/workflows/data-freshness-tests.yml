@@ -11,24 +11,30 @@ permissions:
   contents: read
 
 jobs:
-  regression:
+  powershell-core:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: ubuntu-latest
-            shell: pwsh
-          - os: windows-latest
-            shell: pwsh
-          - os: windows-latest
-            shell: powershell
+        os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
       - name: Offline data freshness regression
-        shell: ${{ matrix.shell }}
+        shell: pwsh
         run: ./ps/Test-DataFreshness.ps1
       - name: Existing temporal boundaries (no model training)
-        shell: ${{ matrix.shell }}
+        shell: pwsh
+        run: ./ps/Test-TemporalBoundaries.ps1 -SkipModel
+
+  windows-powershell:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - name: Offline data freshness regression
+        shell: powershell
+        run: ./ps/Test-DataFreshness.ps1
+      - name: Existing temporal boundaries (no model training)
+        shell: powershell
         run: ./ps/Test-TemporalBoundaries.ps1 -SkipModel
